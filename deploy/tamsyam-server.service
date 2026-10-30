@@ -1,0 +1,22 @@
+[Unit]
+Description=tamsyam tunnel server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=tamsyam
+Group=tamsyam
+WorkingDirectory=/var/lib/tamsyam
+EnvironmentFile=/etc/tamsyam/server.env
+ExecStart=/usr/local/bin/tamsyam-server
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/tamsyam
+
+[Install]
+WantedBy=multi-user.target

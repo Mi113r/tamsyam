@@ -1,0 +1,16 @@
+# Wildcard certificate through Cloudflare DNS-01.
+# Needs Caddy built with the Cloudflare DNS module:
+#   xcaddy build --with github.com/caddy-dns/cloudflare
+# CF_API_TOKEN: a Cloudflare API token with Zone:DNS:Edit on your zone.
+
+t.example.com, *.t.example.com {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+	}
+
+	# Address of tamsyam-server (another LXC/VM on Proxmox, or 127.0.0.1 on the same host).
+	reverse_proxy 10.0.0.20:8090 {
+		# Stream responses immediately (SSE, long polling, HMR).
+		flush_interval -1
+	}
+}

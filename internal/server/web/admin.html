@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tamsyam admin</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--muted:#6b7385;--line:#e3e6ec;--accent:#2f6fed;--ok:#1f9d55;--danger:#d64545;--code:#f0f2f5}
+@media (prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1c1f26;--fg:#e6e8ee;--muted:#8b93a6;--line:#2a2e38;--accent:#6b9bff;--ok:#3ccf7a;--danger:#ff6b6b;--code:#252933}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--card)}
+header h1{font-size:17px;margin:0}header .dom{color:var(--muted)}
+main{max-width:1100px;margin:0 auto;padding:24px 16px;display:grid;gap:20px}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+section>h2{font-size:14px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-weight:500;color:var(--muted);font-size:12px}
+tr:last-child td{border-bottom:0}
+tr.sel td{background:var(--code)}
+a{color:var(--accent);text-decoration:none}
+code{background:var(--code);padding:1px 6px;border-radius:4px;font-size:13px}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;padding:4px 10px;cursor:pointer}
+button:hover{border-color:var(--muted)}button.danger{color:var(--danger)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+input{font:inherit;padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+.empty{padding:20px 16px;color:var(--muted)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px}
+.muted{color:var(--muted)}.s2xx{color:var(--ok)}.s4xx{color:#d08a00}.s5xx{color:var(--danger)}
+form{display:flex;gap:8px}
+.secret{margin:12px 16px;padding:12px;border:1px solid var(--accent);border-radius:8px;display:grid;gap:6px}
+.secret code{word-break:break-all;white-space:normal}
+.insp{display:grid;grid-template-columns:minmax(0,1fr)}
+@media (min-width:900px){.insp{grid-template-columns:minmax(0,1fr) minmax(0,1.25fr)}.insp>#detail{border-left:1px solid var(--line)}}
+.insp>.list{max-height:640px;overflow:auto}
+#requests th,#requests td{padding:8px 10px}#requests th:first-child,#requests td:first-child{padding-left:16px}
+#requests tr[data-id]{cursor:pointer}#requests tr[data-id]:hover td{background:var(--code)}
+#detail{padding:16px;min-width:0;max-height:640px;overflow:auto}
+#detail:empty::before{content:"Выберите запрос слева";color:var(--muted)}
+.dhead{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.dhead .path{word-break:break-all}
+#detail h3{font-size:13px;margin:16px 0 6px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+table.kv td{padding:3px 8px 3px 0;border:0;white-space:normal;vertical-align:top;font-size:13px}
+table.kv td:first-child{color:var(--muted);white-space:nowrap}
+table.kv td:last-child{word-break:break-all;font-family:ui-monospace,Consolas,monospace}
+pre{margin:6px 0 0;padding:10px;background:var(--code);border-radius:6px;overflow:auto;max-height:360px;font-size:12.5px;white-space:pre-wrap;word-break:break-all}
+.note{font-size:12px;color:var(--muted)}
+.tag{font-size:11px;padding:0 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted);margin-left:4px}
+</style>
+</head>
+<body>
+<header><h1>tamsyam</h1><span class="dom" id="dom"></span></header>
+<main>
+  <section>
+    <h2><span>Активные туннели</span><span class="muted" id="tcount"></span></h2>
+    <div class="scroll"><table id="tunnels"></table></div>
+  </section>
+  <section id="reqsec" hidden>
+    <h2><span>Запросы · <span id="reqsub"></span></span><button onclick="selectTunnel(null)">Закрыть</button></h2>
+    <div class="insp">
+      <div class="list"><table id="requests"></table></div>
+      <div id="detail"></div>
+    </div>
+  </section>
+  <section>
+    <h2><span>Токены</span>
+      <form onsubmit="createToken(event)"><input id="tname" placeholder="имя, напр. laptop" required><button class="primary">Создать</button></form>
+    </h2>
+    <div id="secret"></div>
+    <div class="scroll"><table id="tokens"></table></div>
+  </section>
+</main>
+<script>
+let info = {}, selected = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ago = t => { if (!t) return '—'; const s = Math.round((Date.now() - new Date(t)) / 1000);
+  return s < 60 ? s + ' с' : s < 3600 ? Math.round(s/60) + ' мин' : s < 86400 ? Math.round(s/3600) + ' ч' : Math.round(s/86400) + ' д'; };
+async function api(method, path, body) {
+  // location.origin drops user:pass@ from the page URL, which fetch would reject.
+  const r = await fetch(location.origin + path, {method, headers: body ? {'Content-Type':'application/json'} : {}, body: body && JSON.stringify(body)});
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+  return r.status === 204 ? null : r.json();
+}
+async function loadTunnels() {
+  const list = await api('GET', '/api/tunnels');
+  $('tcount').textContent = list.length;
+  $('tunnels').innerHTML = list.length ? `<tr><th>Адрес</th><th>Цель</th><th>Токен</th><th>Клиент</th><th>Подключён</th><th>Запросов</th><th></th></tr>` +
+    list.map(t => `<tr class="${t.subdomain === selected ? 'sel' : ''}">
+      <td><span class="dot"></span><a href="${esc(t.url)}" target="_blank">${esc(t.url.replace(/^https?:\/\//, ''))}</a></td>
+      <td><code>${esc(t.target)}</code></td><td>${esc(t.token_name)}</td>
+      <td class="muted">${esc(t.client_addr)} · v${esc(t.client_version)}</td>
+      <td class="muted">${ago(t.connected_at)}</td><td>${t.requests}</td>
+      <td><button onclick="selectTunnel('${esc(t.subdomain)}')">Запросы</button>
+          <button class="danger" onclick="kick('${esc(t.subdomain)}')">Отключить</button></td></tr>`).join('')
+    : `<tr><td class="empty">Нет подключённых клиентов</td></tr>`;
+}
+async function loadRequests() {
+  if (!selected) return;
+  let reqs;
+  try { reqs = await api('GET', `/api/tunnels/${selected}/requests`); }
+  catch { $('requests').innerHTML = `<tr><td class="empty">Туннель отключён</td></tr>`; return; }
+  $('requests').innerHTML = reqs.length ? `<tr><th>Метод</th><th>Путь</th><th>Статус</th><th>мс</th></tr>` +
+    reqs.map(r => `<tr data-id="${r.id}" class="${r.id === selectedReq ? 'sel' : ''}" onclick="showRequest(${r.id})" title="${new Date(r.time).toLocaleTimeString()}">
+      <td>${esc(r.method)}</td>
+      <td><code>${esc(r.path.length > 40 ? r.path.slice(0, 40) + '…' : r.path)}</code>${r.replay ? '<span class="tag">replay</span>' : ''}${r.upgrade ? '<span class="tag">ws</span>' : ''}</td>
+      <td class="s${String(r.status)[0]}xx">${r.status}</td><td class="muted">${r.duration_ms}</td></tr>`).join('')
+    : `<tr><td class="empty">Запросов пока не было</td></tr>`;
+}
+let selectedReq = null, currentReq = null;
+const kv = h => { const keys = Object.keys(h || {}).sort();
+  return keys.length ? `<table class="kv">${keys.map(k => h[k].map(v => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')).join('')}</table>` : '<div class="note">нет</div>'; };
+const fmtSize = n => n < 1024 ? n + ' Б' : (n / 1024).toFixed(1) + ' КБ';
+function bodyView(b) {
+  if (!b || !b.size) return '<div class="note">пусто</div>';
+  const notes = [fmtSize(b.size)];
+  if (b.truncated) notes.push('показаны первые 32 КБ');
+  if (b.decoded) notes.push('распаковано из ' + b.decoded);
+  if (b.encoding === 'base64') return `<div class="note">${notes.join(' · ')} · бинарные данные</div>`;
+  let text = b.data;
+  try { if (!b.truncated && /^\s*[\[{]/.test(text)) text = JSON.stringify(JSON.parse(text), null, 2); } catch {}
+  return `<div class="note">${notes.join(' · ')}</div><pre>${esc(text)}</pre>`;
+}
+async function showRequest(id) {
+  selectedReq = id;
+  document.querySelectorAll('#requests tr[data-id]').forEach(tr => tr.classList.toggle('sel', +tr.dataset.id === id));
+  let d;
+  try { d = await api('GET', `/api/tunnels/${selected}/requests/${id}`); }
+  catch (e) { $('detail').innerHTML = `<div class="note">${esc(e.message)}</div>`; return; }
+  currentReq = d;
+  const canReplay = !d.upgrade && !(d.request_body && d.request_body.truncated);
+  $('detail').innerHTML = `
+    <div class="dhead"><b>${esc(d.method)}</b><code class="path">${esc(d.path)}</code>
+      <span class="s${String(d.status)[0]}xx">${d.status}</span><span class="muted">${d.duration_ms} мс · ${new Date(d.time).toLocaleString()} · ${esc(d.remote_ip)}</span></div>
+    <div class="dhead">
+      <button class="primary" onclick="replay(${d.id})" ${canReplay ? '' : 'disabled title="WebSocket и обрезанные тела повторить нельзя"'}>Повторить</button>
+      <button onclick="copyCurl(this)">Копировать curl</button></div>
+    <h3>Запрос · заголовки</h3>${kv(d.request_headers)}
+    <h3>Запрос · тело</h3>${bodyView(d.request_body)}
+    <h3>Ответ · заголовки</h3>${kv(d.response_headers)}
+    <h3>Ответ · тело</h3>${bodyView(d.response_body)}`;
+}
+async function replay(id) {
+  try { const r = await api('POST', `/api/tunnels/${selected}/requests/${id}/replay`); await loadRequests(); showRequest(r.id); }
+  catch (e) { alert('Не удалось повторить: ' + e.message); }
+}
+function copyCurl(btn) {
+  const d = currentReq, q = s => `'${String(s).replace(/'/g, `'\\''`)}'`;
+  const skip = /^(host|content-length|connection|accept-encoding|x-forwarded-.*|via)$/i;
+  const scheme = (info.server || 'https://').split('//')[0];
+  const parts = [`curl -X ${d.method} ${q(scheme + '//' + d.host + d.path)}`];
+  for (const [k, vs] of Object.entries(d.request_headers || {})) if (!skip.test(k)) vs.forEach(v => parts.push(`-H ${q(k + ': ' + v)}`));
+  if (d.request_body && d.request_body.size && d.request_body.encoding === 'text') parts.push(`--data-raw ${q(d.request_body.data)}`);
+  navigator.clipboard.writeText(parts.join(' \\\n  ')).then(() => { btn.textContent = 'Скопировано'; setTimeout(() => btn.textContent = 'Копировать curl', 1500); });
+}
+async function loadTokens() {
+  const list = await api('GET', '/api/tokens');
+  $('tokens').innerHTML = list.length ? `<tr><th>Имя</th><th>Префикс</th><th>Создан</th><th>Использован</th><th></th></tr>` +
+    list.map(t => `<tr><td>${esc(t.name)}</td><td><code>${esc(t.prefix)}…</code></td>
+      <td class="muted">${ago(t.created_at)} назад</td><td class="muted">${t.last_used_at ? ago(t.last_used_at) + ' назад' : '—'}</td>
+      <td>${t.revoked ? '<span class="muted">отозван</span>' : `<button class="danger" onclick="revoke(${t.id})">Отозвать</button>`}</td></tr>`).join('')
+    : `<tr><td class="empty">Создайте токен, чтобы подключить клиента</td></tr>`;
+}
+function selectTunnel(sub) {
+  selected = sub; selectedReq = currentReq = null; $('detail').innerHTML = '';
+  $('reqsec').hidden = !sub; $('reqsub').textContent = sub || ''; refresh();
+}
+async function kick(sub) { if (confirm(`Отключить ${sub}?`)) { await api('DELETE', `/api/tunnels/${sub}`); refresh(); } }
+async function revoke(id) { if (confirm('Отозвать токен? Его туннели будут отключены.')) { await api('DELETE', `/api/tokens/${id}`); refresh(); } }
+async function createToken(e) {
+  e.preventDefault();
+  const res = await api('POST', '/api/tokens', {name: $('tname').value});
+  $('tname').value = '';
+  $('secret').innerHTML = `<div class="secret"><b>Токен «${esc(res.token.name)}» создан. Он показывается один раз.</b>
+    <span class="muted">На машине разработчика выполните:</span>
+    <code>tamsyam login ${esc(info.server)} ${esc(res.secret)}</code></div>`;
+  loadTokens();
+}
+async function refresh() {
+  try { await Promise.all([loadTunnels(), loadRequests(), loadTokens()]); } catch (e) { console.error(e); }
+}
+api('GET', '/api/info').then(i => { info = i; $('dom').textContent = i.domain + ' · v' + i.version; });
+refresh(); setInterval(refresh, 3000);
+</script>
+</body>
+</html>
