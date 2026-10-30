@@ -20,7 +20,9 @@
 go build -o bin/ ./cmd/...
 ```
 
-Кросс-компиляция сервера под Linux:
+Релиз: `git tag v0.1.0 && git push origin v0.1.0`. GitHub Actions соберёт через GoReleaser клиент (Linux, macOS, Windows) и сервер (Linux) и выложит архивы в Releases.
+
+Кросс-компиляция сервера под Linux вручную:
 
 ```bash
 GOOS=linux GOARCH=amd64 go build -o bin/tamsyam-server ./cmd/tamsyam-server

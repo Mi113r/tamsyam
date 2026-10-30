@@ -141,7 +141,7 @@ type teeBody struct {
 
 func (t *teeBody) Read(p []byte) (int, error) {
 	n, err := t.ReadCloser.Read(p)
-	t.buf.Write(p[:n])
+	_, _ = t.buf.Write(p[:n])
 	return n, err
 }
 
@@ -165,7 +165,7 @@ func (s *statusRecorder) Write(p []byte) (int, error) {
 	if s.status == 0 {
 		s.WriteHeader(http.StatusOK)
 	}
-	s.body.Write(p)
+	_, _ = s.body.Write(p)
 	return s.ResponseWriter.Write(p)
 }
 

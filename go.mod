@@ -2,6 +2,8 @@ module github.com/Mi113r/tamsyam
 
 go 1.27.0
 
+toolchain go1.27.3
+
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/hashicorp/yamux v0.1.2

@@ -14,8 +14,10 @@ import (
 	"github.com/hashicorp/yamux"
 )
 
+// Version is set at release time via -ldflags "-X .../protocol.Version=...".
+var Version = "dev"
+
 const (
-	Version     = "0.1.0"
 	ConnectPath = "/_tamsyam/connect"
 
 	// Request headers (client -> server).
