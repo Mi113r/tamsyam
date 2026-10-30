@@ -8,11 +8,29 @@
 браузер ──https──> Caddy (*.t.example.com, wildcard TLS)
                      │ http
                      ▼
-               tamsyam-server ──WebSocket + yamux──> tamsyam (CLI) ──> localhost:8080
+               tamsyam-server ──WebSocket + yamux──> ts (CLI) ──> localhost:8080
 ```
 
+## Установка клиента
+
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/Mi113r/tamsyam/main/install.ps1 | iex
+```
+
+macOS / Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Mi113r/tamsyam/main/install.sh | sh
+```
+
+Скрипт скачивает последний релиз, сверяет SHA-256 с `checksums.txt` и кладёт `ts` в `%LOCALAPPDATA%\Programs\tamsyam` (Windows) или `~/.local/bin`. Архивы можно скачать и вручную со страницы [Releases](https://github.com/Mi113r/tamsyam/releases). Если установлен Go: `go install github.com/Mi113r/tamsyam/cmd/ts@latest`.
+
+Сервер нужен свой: см. раздел «Развёртывание» ниже.
+
 - **tamsyam-server** живёт за Caddy. Запросы к `t.example.com` уходят в админку и на endpoint клиентов, запросы к `<sub>.t.example.com` уходят в туннель.
-- **tamsyam** — CLI. Он подключается по WebSocket (проходит через любой прокси и 443), поднимает поверх yamux и проксирует каждый TCP-поток на локальный порт. WebSocket, SSE и HMR работают.
+- **ts** — CLI. Он подключается по WebSocket (проходит через любой прокси и 443), поднимает поверх yamux и проксирует каждый TCP-поток на локальный порт. WebSocket, SSE и HMR работают.
 - Токены хранятся в SQLite (только sha256-хэш). Админка показывает активные туннели, умеет создавать и отзывать токены и отключать туннели.
 - **Инспектор запросов:** для каждого туннеля хранятся последние 200 запросов в памяти сервера: заголовки, тела запроса и ответа (до 32 КБ каждое, gzip распаковывается, JSON форматируется). Запрос можно повторить одной кнопкой или скопировать как curl. В инспекторе видны все заголовки, включая `Authorization` и cookies, поэтому админка должна быть доступна только вам.
 
