@@ -1,8 +1,8 @@
-// Command tamsyam exposes a local HTTP service through a tamsyam server.
+// Command ts (tamsyam client) exposes a local HTTP service through a tamsyam server.
 //
-//	tamsyam login https://t.example.com tsm_xxx
-//	tamsyam http 8080
-//	tamsyam http 3000 -s myapp
+//	ts login https://t.example.com tsm_xxx
+//	ts http 8080
+//	ts http 3000 -s myapp
 package main
 
 import (
@@ -26,12 +26,12 @@ type config struct {
 	Token  string `json:"token"`
 }
 
-const usage = `tamsyam — expose a local service to the internet
+const usage = `ts — expose a local service to the internet (tamsyam client)
 
 Usage:
-  tamsyam login <server-url> <token>   save server and token
-  tamsyam http <port|host:port> [-s subdomain] [--server url] [--token t]
-  tamsyam version
+  ts login <server-url> <token>   save server and token
+  ts http <port|host:port> [-s subdomain] [--server url] [--token t]
+  ts version
 `
 
 func main() {
@@ -59,7 +59,7 @@ func main() {
 
 func cmdLogin(args []string) error {
 	if len(args) != 2 {
-		return errors.New("usage: tamsyam login <server-url> <token>")
+		return errors.New("usage: ts login <server-url> <token>")
 	}
 	cfg := config{Server: strings.TrimSuffix(args[0], "/"), Token: args[1]}
 	if !strings.HasPrefix(cfg.Server, "http://") && !strings.HasPrefix(cfg.Server, "https://") {
@@ -91,7 +91,7 @@ func cmdHTTP(args []string) error {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return errors.New("usage: tamsyam http <port|host:port> [-s subdomain]")
+		return errors.New("usage: ts http <port|host:port> [-s subdomain]")
 	}
 	target := fs.Arg(0)
 	if err := fs.Parse(fs.Args()[1:]); err != nil {
@@ -109,7 +109,7 @@ func cmdHTTP(args []string) error {
 		cfg.Token = *token
 	}
 	if cfg.Server == "" || cfg.Token == "" {
-		return errors.New("not logged in: run `tamsyam login <server-url> <token>` first")
+		return errors.New("not logged in: run `ts login <server-url> <token>` first")
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)

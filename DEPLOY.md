@@ -1,6 +1,6 @@
 # Деплой tamsyam — инструкция для агента
 
-Ты разворачиваешь сервер туннелей **tamsyam** на инфраструктуре пользователя: Proxmox, белый IP, уже работающий Caddy, DNS в Cloudflare. В конце пользователь должен открыть админку по `https://<BASE_DOMAIN>` и запустить `tamsyam http 8080` у себя на машине, получив рабочий `https://<sub>.<BASE_DOMAIN>`.
+Ты разворачиваешь сервер туннелей **tamsyam** на инфраструктуре пользователя: Proxmox, белый IP, уже работающий Caddy, DNS в Cloudflare. В конце пользователь должен открыть админку по `https://<BASE_DOMAIN>` и запустить `ts http 8080` у себя на машине, получив рабочий `https://<sub>.<BASE_DOMAIN>`.
 
 Код лежит в этом репозитории. Как всё устроено, описано в [README.md](README.md). Готовые файлы для деплоя лежат в [deploy/](deploy/).
 
@@ -57,7 +57,7 @@
 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o bin/linux/tamsyam-server ./cmd/tamsyam-server
 ```
 
-Клиент собери под ОС пользователя: на Windows это `go build -o bin/ ./cmd/tamsyam`, для macOS или Linux укажи соответствующие `GOOS`/`GOARCH`.
+Клиент собери под ОС пользователя: на Windows это `go build -o bin/ ./cmd/ts`, для macOS или Linux укажи соответствующие `GOOS`/`GOARCH`.
 
 ## Шаг 3. Установка tamsyam-server
 
@@ -241,7 +241,7 @@ curl -s -u "admin:$ADMIN_PASSWORD" -H 'Content-Type: application/json' \
 
 ```bash
 python3 -m http.server 18080 &          # любой локальный сервис
-./tamsyam http 18080 -s deploycheck --server https://<BASE_DOMAIN> --token <secret>
+./ts http 18080 -s deploycheck --server https://<BASE_DOMAIN> --token <secret>
 # в другом терминале:
 curl -s -o /dev/null -w '%{http_code}\n' https://deploycheck.<BASE_DOMAIN>/   # 200
 ```
@@ -254,8 +254,8 @@ curl -s -o /dev/null -w '%{http_code}\n' https://deploycheck.<BASE_DOMAIN>/   # 
 - адрес админки и пароль (один раз). Скажи, что пароль хранится в `/etc/tamsyam/server.env` на `SERVER_SSH`;
 - команды для его машины:
   ```bash
-  tamsyam login https://<BASE_DOMAIN> <secret>
-  tamsyam http 8080
+  ts login https://<BASE_DOMAIN> <secret>
+  ts http 8080
   ```
 - что изменено на каждом хосте: файлы, юниты, DNS-записи, бэкапы;
 - всё, что пропущено или не удалось проверить.

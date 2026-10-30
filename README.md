@@ -1,6 +1,8 @@
 # tamsyam
 
-Свой аналог tuna/ngrok: `tamsyam http 8080` → `https://xxxx.t.example.com`.
+Свой аналог tuna/ngrok: `ts http 8080` → `https://xxxx.t.example.com`.
+
+Клиентская команда называется `ts`. На Linux с пакетом `moreutils` уже есть своя утилита `ts`: тогда положите наш бинарник раньше в `PATH` или переименуйте его, например в `tsm`.
 
 ```
 браузер ──https──> Caddy (*.t.example.com, wildcard TLS)
@@ -48,10 +50,10 @@ GOOS=linux GOARCH=amd64 go build -o bin/tamsyam-server ./cmd/tamsyam-server
 ## Использование
 
 ```bash
-tamsyam login https://t.example.com tsm_...
-tamsyam http 8080              # случайный поддомен
-tamsyam http 3000 -s myapp     # https://myapp.t.example.com
-tamsyam http 192.168.1.5:80    # любой host:port
+ts login https://t.example.com tsm_...
+ts http 8080              # случайный поддомен
+ts http 3000 -s myapp     # https://myapp.t.example.com
+ts http 192.168.1.5:80    # любой host:port
 ```
 
 При обрыве клиент переподключается и сохраняет тот же адрес.
@@ -61,13 +63,13 @@ tamsyam http 192.168.1.5:80    # любой host:port
 ```bash
 TAMSYAM_DOMAIN=localhost TAMSYAM_ADMIN_PASSWORD=dev TAMSYAM_PUBLIC_SCHEME=http TAMSYAM_PUBLIC_PORT=8090 bin/tamsyam-server
 # админка: http://localhost:8090, туннели: http://<sub>.localhost:8090
-tamsyam http 8080 --server http://localhost:8090 --token tsm_...
+ts http 8080 --server http://localhost:8090 --token tsm_...
 ```
 
 ## Идеи для развития
 
 - Инспектор: редактирование запроса перед повтором, live-обновление через SSE, фильтры.
 - Закрепление поддоменов за токеном, лимиты на токен.
-- Basic-auth или IP-allowlist на туннель (`tamsyam http 8080 --auth user:pass`).
+- Basic-auth или IP-allowlist на туннель (`ts http 8080 --auth user:pass`).
 - TCP-туннели (`tamsyam tcp 5432`) на выделенных портах.
 - Пользователи и OAuth в админке вместо одного пароля, метрики Prometheus.

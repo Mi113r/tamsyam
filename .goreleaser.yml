@@ -1,9 +1,9 @@
 version: 2
 
 builds:
-  - id: tamsyam
-    main: ./cmd/tamsyam
-    binary: tamsyam
+  - id: ts
+    main: ./cmd/ts
+    binary: ts
     env: [CGO_ENABLED=0]
     flags: [-trimpath]
     ldflags:
@@ -23,7 +23,7 @@ builds:
 
 archives:
   - id: client
-    ids: [tamsyam]
+    ids: [ts]
     name_template: "tamsyam_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     format_overrides:

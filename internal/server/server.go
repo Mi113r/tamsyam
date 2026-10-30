@@ -68,7 +68,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	t := s.registry.Get(sub)
 	if t == nil {
 		renderError(w, http.StatusNotFound, "Tunnel not found",
-			"No client is connected for "+host+". Start it with: tamsyam http <port> -s "+sub)
+			"No client is connected for "+host+". Start it with: ts http <port> -s "+sub)
 		return
 	}
 	t.ServeHTTP(w, r)

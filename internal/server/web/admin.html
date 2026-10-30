@@ -174,7 +174,7 @@ async function createToken(e) {
   $('tname').value = '';
   $('secret').innerHTML = `<div class="secret"><b>Токен «${esc(res.token.name)}» создан. Он показывается один раз.</b>
     <span class="muted">На машине разработчика выполните:</span>
-    <code>tamsyam login ${esc(info.server)} ${esc(res.secret)}</code></div>`;
+    <code>ts login ${esc(info.server)} ${esc(res.secret)}</code></div>`;
   loadTokens();
 }
 async function refresh() {
