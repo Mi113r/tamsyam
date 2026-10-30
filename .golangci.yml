@@ -1,0 +1,9 @@
+version: "2"
+
+linters:
+  exclusions:
+    presets:
+      - std-error-handling # Close, Flush, fmt.Print* and friends
+    rules:
+      - path: _test\.go
+        linters: [errcheck]

@@ -150,14 +150,14 @@ func forward(stream net.Conn, target string) {
 	defer local.Close()
 
 	done := make(chan struct{}, 2)
-	go func() { io.Copy(local, stream); closeWrite(local); done <- struct{}{} }()
-	go func() { io.Copy(stream, local); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(local, stream); closeWrite(local); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(stream, local); done <- struct{}{} }()
 	<-done
 }
 
 func closeWrite(c net.Conn) {
 	if tc, ok := c.(*net.TCPConn); ok {
-		tc.CloseWrite()
+		_ = tc.CloseWrite()
 	}
 }
 

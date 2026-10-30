@@ -145,7 +145,7 @@ func loadConfig() config {
 		return cfg
 	}
 	if data, err := os.ReadFile(path); err == nil {
-		json.Unmarshal(data, &cfg)
+		_ = json.Unmarshal(data, &cfg)
 	}
 	return cfg
 }

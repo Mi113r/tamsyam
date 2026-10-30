@@ -23,7 +23,7 @@ func (s *Server) adminRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(adminHTML)
+		_, _ = w.Write(adminHTML)
 	})
 	mux.HandleFunc("GET /api/info", s.apiInfo)
 	mux.HandleFunc("GET /api/tunnels", s.apiListTunnels)
@@ -34,7 +34,7 @@ func (s *Server) adminRoutes() http.Handler {
 	mux.HandleFunc("GET /api/tokens", s.apiListTokens)
 	mux.HandleFunc("POST /api/tokens", s.apiCreateToken)
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.apiRevokeToken)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
 	return s.basicAuth(mux)
 }
 
@@ -186,7 +186,7 @@ func (s *Server) apiRevokeToken(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {
