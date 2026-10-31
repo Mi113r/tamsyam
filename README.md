@@ -2,18 +2,30 @@
 
 # tamsyam
 
-Свой аналог tuna/ngrok: `ts http 8080` → `https://xxxx.t.example.com`.
+**English** · [Русский](README.ru.md)
 
-Клиентская команда называется `ts`. На Linux с пакетом `moreutils` уже есть своя утилита `ts`: тогда положите наш бинарник раньше в `PATH` или переименуйте его, например в `tsm`.
+A self-hosted alternative to ngrok on your own domain: `ts http 8080` → `https://xxxx.t.example.com`. Server, admin panel and CLI.
 
 ```
-браузер ──https──> Caddy (*.t.example.com, wildcard TLS)
+browser ──https──> Caddy (*.t.example.com, wildcard TLS)
                      │ http
                      ▼
                tamsyam-server ──WebSocket + yamux──> ts (CLI) ──> localhost:8080
 ```
 
-## Установка клиента
+## Features
+
+- **HTTP tunnels** on a random or chosen subdomain. WebSocket, SSE and HMR work. The terminal shows a live request log and a summary on exit.
+- **TCP tunnels** (`ts tcp 5432`): the server opens a public port from `TAMSYAM_TCP_PORTS` and returns `tcp://t.example.com:20017`. Good for Postgres, Redis, SSH, RDP or any TCP. A port requested with `-p` is reserved for the token. TCP bypasses Caddy, so forward the range on your router.
+- **IP allow lists** (`--allow 203.0.113.0/24,198.51.100.7`) for HTTP and TCP.
+- **Request inspector:** the last 200 requests per tunnel with headers and bodies (up to 32 KB each, gzip decoded, JSON pretty-printed). Replay a request or copy it as curl.
+- **Statistics:** live counters (rpm, p50/p90, 4xx/5xx, connections, traffic) and 30 days of history: status and traffic charts, top paths, clients by IP.
+- **Admin panel:** tunnels, tokens, reserved ports; light and dark theme. The UI is in Russian for now.
+- **Access control:** client tokens are stored as sha256 hashes only. The admin panel is password-protected and can be opened without a password from your LAN (`TAMSYAM_PRIVATE_NETWORKS`). Ten failed logins within 15 minutes block the IP.
+
+The inspector shows every header, including `Authorization` and cookies, so keep the admin panel to yourself.
+
+## Install the client
 
 Windows (PowerShell):
 
@@ -27,83 +39,90 @@ macOS / Linux:
 curl -fsSL https://raw.githubusercontent.com/Mi113r/tamsyam/main/install.sh | sh
 ```
 
-Скрипт скачивает последний релиз, сверяет SHA-256 с `checksums.txt` и кладёт `ts` в `%LOCALAPPDATA%\Programs\tamsyam` (Windows) или `~/.local/bin`. Архивы можно скачать и вручную со страницы [Releases](https://github.com/Mi113r/tamsyam/releases). Если установлен Go: `go install github.com/Mi113r/tamsyam/cmd/ts@latest`.
+The script downloads the latest release, verifies its SHA-256 against `checksums.txt` and puts `ts` into `%LOCALAPPDATA%\Programs\tamsyam` (Windows) or `~/.local/bin`. Archives are also on the [Releases](https://github.com/Mi113r/tamsyam/releases) page. With Go: `go install github.com/Mi113r/tamsyam/cmd/ts@latest`.
 
-Сервер нужен свой: см. раздел «Развёртывание» ниже.
+On Linux, `moreutils` ships its own `ts`: put ours earlier in `PATH` or rename it, e.g. to `tsm`.
 
-- **tamsyam-server** живёт за Caddy. Запросы к `t.example.com` уходят в админку и на endpoint клиентов, запросы к `<sub>.t.example.com` уходят в туннель.
-- **ts** — CLI. Он подключается по WebSocket (проходит через любой прокси и 443), поднимает поверх yamux и проксирует каждый TCP-поток на локальный порт. WebSocket, SSE и HMR работают. В терминале печатается живой лог запросов и соединений, при выходе — сводка.
-- **TCP-туннели** (`ts tcp 5432`): сервер открывает публичный порт из диапазона `TAMSYAM_TCP_PORTS` и отдаёт адрес `tcp://t.example.com:20017`. Подходит для Postgres, Redis, SSH, RDP и любого TCP. Порт, заданный через `-p`, закрепляется за токеном и не меняется после перезапуска. TCP идёт мимо Caddy, поэтому диапазон нужно пробросить на роутере.
-- **IP-фильтр** (`--allow 203.0.113.0/24,198.51.100.7`): туннель доступен только с этих адресов, для HTTP и TCP.
-- **Статистика:** живые счётчики туннеля (rpm, p50/p90, 4xx/5xx, активные соединения, трафик) и история за 30 дней в SQLite: графики запросов по статусам и трафика за 1 ч / 24 ч / 7 / 30 дней, популярные пути, клиенты по IP, уникальные IP.
-- Тема админки: системная, светлая или тёмная (переключатель рядом с логотипом, выбор запоминается в браузере).
-- Токены хранятся в SQLite (только sha256-хэш). Админка показывает активные туннели, умеет создавать и отзывать токены и отключать туннели.
-- **Инспектор запросов:** для каждого туннеля хранятся последние 200 запросов в памяти сервера: заголовки, тела запроса и ответа (до 32 КБ каждое, gzip распаковывается, JSON форматируется). Запрос можно повторить одной кнопкой или скопировать как curl. В инспекторе видны все заголовки, включая `Authorization` и cookies, поэтому админка должна быть доступна только вам.
-
-## Сборка
+## Usage
 
 ```bash
-go build -o bin/ ./cmd/...
+ts login https://t.example.com tsm_...
+ts http 8080              # random subdomain
+ts http 3000 -s myapp     # https://myapp.t.example.com
+ts http 192.168.1.5:80    # any host:port
+ts http 8080 --allow 203.0.113.0/24   # only from these IPs
+
+ts tcp 5432               # tcp://t.example.com:<random port>
+ts tcp 22 -p 20022        # fixed port, reserved for your token
+ts tcp 5432 -q            # no connection log
 ```
 
-Релиз: `git tag v0.1.0 && git push origin v0.1.0`. GitHub Actions соберёт через GoReleaser клиент (Linux, macOS, Windows) и сервер (Linux) и выложит архивы в Releases.
+The client reconnects on its own and keeps the same address.
 
-Кросс-компиляция сервера под Linux вручную:
+## Deploy the server
+
+You need a domain on Cloudflare, a host with a public IP (or ports 80/443 forwarded to it) and a Cloudflare API token with `Zone:DNS:Edit`. The wildcard certificate is issued through DNS-01, so port 80 is not required for ACME.
+
+**DNS.** Create `A t` and `A *.t` records pointing at your public IP, **DNS only** (grey cloud). Cloudflare's Universal SSL does not cover second-level subdomains, and its proxy would cut long-lived connections.
+
+### Docker Compose (easiest)
+
+Two images, for amd64 and arm64: `ghcr.io/mi113r/tamsyam-server` and `ghcr.io/mi113r/tamsyam-caddy` (Caddy with the Cloudflare module and the site config built in).
 
 ```bash
-GOOS=linux GOARCH=amd64 go build -o bin/tamsyam-server ./cmd/tamsyam-server
+mkdir tamsyam && cd tamsyam
+curl -fsSLO https://raw.githubusercontent.com/Mi113r/tamsyam/main/deploy/docker/compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/Mi113r/tamsyam/main/deploy/docker/.env.example
+# fill in .env: domain, admin password, Cloudflare token
+docker compose up -d
 ```
 
-## Развёртывание (Proxmox + Caddy + Cloudflare)
+Open `https://t.example.com`, create a token under «Токены» (Tokens) and connect the client. For TCP tunnels, forward `TAMSYAM_TCP_PORTS` (default `20000-20019`) on your router. To upgrade: `docker compose pull && docker compose up -d`.
 
-Подробная пошаговая инструкция с проверками и откатом, рассчитанная на агента: [DEPLOY.md](DEPLOY.md). Обновление, доступ из LAN и VPN, пароли и токены на уже работающем сервере описаны в [AGENTS.md](AGENTS.md). Ниже краткая версия.
+### Binary + systemd (if you already run Caddy)
 
-1. **DNS в Cloudflare:** записи `A t` и `A *.t` на белый IP, режим **DNS only** (серое облако). Universal SSL Cloudflare не покрывает поддомены второго уровня, и прокси Cloudflare обрывал бы долгие соединения.
-2. **Caddy:** соберите с модулем `caddy-dns/cloudflare` и возьмите [deploy/Caddyfile](deploy/Caddyfile). Нужен API-токен с правом `Zone:DNS:Edit`.
-3. **Сервер** (LXC или VM):
+A step-by-step guide with checks and rollback, written for an AI agent (in Russian): [DEPLOY.md](DEPLOY.md). In short:
+
+1. Build Caddy with the `caddy-dns/cloudflare` module and add the block from [deploy/Caddyfile](deploy/Caddyfile).
+2. Install the server:
    ```bash
    useradd -r -s /usr/sbin/nologin tamsyam
    mkdir -p /var/lib/tamsyam /etc/tamsyam && chown tamsyam: /var/lib/tamsyam
    cp tamsyam-server /usr/local/bin/
-   cp deploy/server.env.example /etc/tamsyam/server.env   # отредактировать
+   cp deploy/server.env.example /etc/tamsyam/server.env   # edit it
    cp deploy/tamsyam-server.service /etc/systemd/system/
    systemctl enable --now tamsyam-server
    ```
-4. Откройте `https://t.example.com` (пароль из `TAMSYAM_ADMIN_PASSWORD`) и создайте токен.
+3. Open `https://t.example.com` (password from `TAMSYAM_ADMIN_PASSWORD`) and create a token.
 
-Админке можно доверить домашнюю сеть: задайте `TAMSYAM_PRIVATE_NETWORKS` (список CIDR/IP через запятую) — оттуда панель открывается без пароля. Все остальные адреса, включая VPN-клиентов, вводят пароль как обычно.
+### Client IPs, LAN and VPN
 
-Реальный IP клиента сервер берёт из `X-Forwarded-For`, но только если запрос пришёл от доверенного прокси: loopback или адреса из `TAMSYAM_TRUSTED_PROXIES`. Заголовок читается справа налево, поэтому подставленные клиентом значения не учитываются. Если Caddy работает на другом хосте, укажите его IP в `TAMSYAM_TRUSTED_PROXIES`. Без этого все запросы выглядят как пришедшие от Caddy: беспарольный вход из LAN не сработает, а `--allow` и статистика будут видеть адрес Caddy.
+The server takes the real client IP from `X-Forwarded-For`, but only from a trusted proxy: loopback or `TAMSYAM_TRUSTED_PROXIES` (already set in the Compose stack). The header is read right to left, so values a client adds itself are ignored. If Caddy runs on another host, list its IP in `TAMSYAM_TRUSTED_PROXIES`; otherwise every request looks like it came from Caddy.
 
-## Использование
+`TAMSYAM_PRIVATE_NETWORKS` (comma-separated CIDRs/IPs) opens the admin panel without a password from those networks. Routers often masquerade VPN clients behind their own LAN address, so measure which addresses the server actually sees first. [AGENTS.md](AGENTS.md) walks through it with a verification checklist.
 
-```bash
-ts login https://t.example.com tsm_...
-ts http 8080              # случайный поддомен
-ts http 3000 -s myapp     # https://myapp.t.example.com
-ts http 192.168.1.5:80    # любой host:port
-ts http 8080 --allow 203.0.113.0/24   # только с этих IP
+Operating a running server (upgrades, passwords, tokens, networks) is covered in [AGENTS.md](AGENTS.md) (in Russian). Every setting is listed and explained in [deploy/server.env.example](deploy/server.env.example).
 
-ts tcp 5432               # tcp://t.example.com:<случайный порт>
-ts tcp 22 -p 20022        # фиксированный порт, закрепляется за токеном
-ts tcp 5432 -q            # без лога соединений
-```
-
-При обрыве клиент переподключается и сохраняет тот же адрес. Закреплённые порты видны в админке, там же их можно освободить.
-
-## Локальный запуск для разработки
+## Development
 
 ```bash
+go build -o bin/ ./cmd/...
+go test ./...
 TAMSYAM_DOMAIN=localhost TAMSYAM_ADMIN_PASSWORD=dev TAMSYAM_PUBLIC_SCHEME=http TAMSYAM_PUBLIC_PORT=8090 bin/tamsyam-server
-# админка: http://localhost:8090, туннели: http://<sub>.localhost:8090
+# admin: http://localhost:8090, tunnels: http://<sub>.localhost:8090
 ts http 8080 --server http://localhost:8090 --token tsm_...
 ```
 
-## Идеи для развития
+Pushing a `vX.Y.Z` tag releases the client and server through GoReleaser and publishes the Docker images to GHCR.
 
-- Инспектор: редактирование запроса перед повтором, live-обновление через SSE, фильтры.
-- Закрепление поддоменов за токеном, лимиты на токен.
-- Basic-auth и rate limit на туннель (`ts http 8080 --auth user:pass`).
-- Инспектор для Postgres/Redis поверх TCP-туннеля, SSH-туннель без SSH-сервера.
-- `ts http --file-server ./dist`, география клиентов по GeoLite2.
-- Пользователи и OAuth в админке вместо одного пароля, метрики Prometheus.
+## Roadmap
+
+- Inspector: edit before replay, live updates, filters.
+- Subdomains reserved per token, per-token limits.
+- Basic auth and rate limits per tunnel (`ts http 8080 --auth user:pass`).
+- `ts http --file-server ./dist`, client geolocation via GeoLite2.
+- Users and OAuth in the admin panel instead of a single password, Prometheus metrics.
+
+## License
+
+[MIT](LICENSE)

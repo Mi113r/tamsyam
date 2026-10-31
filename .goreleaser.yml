@@ -36,6 +36,7 @@ archives:
     formats: [tar.gz]
     files:
       - README.md
+      - README.ru.md
       - DEPLOY.md
       - deploy/*
 
