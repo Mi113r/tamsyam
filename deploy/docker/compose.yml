@@ -1,0 +1,53 @@
+# tamsyam with Caddy: wildcard TLS through Cloudflare DNS, admin panel and tunnels.
+#   cp .env.example .env   # fill it in
+#   docker compose up -d
+name: tamsyam
+
+services:
+  tamsyam:
+    image: ghcr.io/mi113r/tamsyam-server:${TAMSYAM_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      TAMSYAM_DOMAIN: ${TAMSYAM_DOMAIN:?set TAMSYAM_DOMAIN in .env}
+      TAMSYAM_ADMIN_PASSWORD: ${TAMSYAM_ADMIN_PASSWORD:?set TAMSYAM_ADMIN_PASSWORD in .env}
+      TAMSYAM_TCP_PORTS: ${TAMSYAM_TCP_PORTS:-20000-20019}
+      TAMSYAM_PRIVATE_NETWORKS: ${TAMSYAM_PRIVATE_NETWORKS:-}
+      # Caddy's fixed address below: believe its X-Forwarded-For.
+      TAMSYAM_TRUSTED_PROXIES: 172.30.53.2
+    volumes:
+      - tamsyam-data:/data
+    ports:
+      # TCP tunnels go straight to the server. Keep in sync with TAMSYAM_TCP_PORTS;
+      # remove this mapping (and set TAMSYAM_TCP_PORTS to empty) to disable them.
+      - "${TAMSYAM_TCP_PORTS:-20000-20019}:${TAMSYAM_TCP_PORTS:-20000-20019}"
+    networks:
+      tamsyam:
+        ipv4_address: 172.30.53.3
+
+  caddy:
+    image: ghcr.io/mi113r/tamsyam-caddy:${TAMSYAM_VERSION:-latest}
+    restart: unless-stopped
+    depends_on: [tamsyam]
+    environment:
+      TAMSYAM_DOMAIN: ${TAMSYAM_DOMAIN}
+      CF_API_TOKEN: ${CF_API_TOKEN:?set CF_API_TOKEN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      tamsyam:
+        ipv4_address: 172.30.53.2
+
+networks:
+  tamsyam:
+    ipam:
+      config:
+        - subnet: 172.30.53.0/24
+
+volumes:
+  tamsyam-data:
+  caddy-data:
+  caddy-config:

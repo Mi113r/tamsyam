@@ -83,3 +83,32 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
+
+  docker:
+    name: Image (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: tamsyam-server
+            file: Dockerfile
+          - image: tamsyam-caddy
+            file: deploy/docker/caddy.Dockerfile
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: false
+          cache-from: type=gha,scope=ci-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=ci-${{ matrix.image }}
+
+      - name: Validate compose file
+        working-directory: deploy/docker
+        run: cp .env.example .env && sed -i 's/^TAMSYAM_ADMIN_PASSWORD=/&x/; s/^CF_API_TOKEN=/&y/' .env && docker compose config -q

@@ -1,0 +1,10 @@
+# Baked into ghcr.io/mi113r/tamsyam-caddy; configured through environment variables.
+{$TAMSYAM_DOMAIN}, *.{$TAMSYAM_DOMAIN} {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+	}
+	reverse_proxy tamsyam:8090 {
+		# Stream responses immediately (SSE, long polling, HMR).
+		flush_interval -1
+	}
+}

@@ -15,3 +15,11 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories: [/, /deploy/docker]
+    schedule:
+      interval: weekly
+    groups:
+      images:
+        patterns: ["*"]
