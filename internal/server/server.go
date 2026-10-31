@@ -13,6 +13,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 	"github.com/hashicorp/yamux"
@@ -46,6 +47,11 @@ type Config struct {
 	// believed. Loopback is always trusted; a proxy on another host must be listed,
 	// otherwise every request appears to come from the proxy itself.
 	TrustedProxies []netip.Prefix
+
+	// AuthMaxFailures failed logins (admin password or client token) within
+	// AuthWindow block the client IP until the window ends. Defaults: 10, 15 min.
+	AuthMaxFailures int
+	AuthWindow      time.Duration
 }
 
 // ParseNetworks parses a comma-separated list of CIDRs and plain IPs
@@ -62,6 +68,7 @@ type Server struct {
 	stats    *Collector
 	log      *slog.Logger
 	admin    http.Handler
+	limiter  *authLimiter
 
 	warnProxy sync.Once
 }
@@ -73,7 +80,14 @@ func New(cfg Config, st *store.Store, log *slog.Logger) *Server {
 	if cfg.TCPHost == "" {
 		cfg.TCPHost = cfg.Domain
 	}
-	s := &Server{cfg: cfg, store: st, registry: NewRegistry(), stats: newCollector(st, log), log: log}
+	if cfg.AuthMaxFailures <= 0 {
+		cfg.AuthMaxFailures = 10
+	}
+	if cfg.AuthWindow <= 0 {
+		cfg.AuthWindow = 15 * time.Minute
+	}
+	s := &Server{cfg: cfg, store: st, registry: NewRegistry(), stats: newCollector(st, log), log: log,
+		limiter: newAuthLimiter(cfg.AuthMaxFailures, cfg.AuthWindow)}
 	s.admin = s.adminRoutes()
 	go s.stats.run()
 	return s
@@ -117,6 +131,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	if wait := s.limiter.blocked(ip); wait > 0 {
+		tooManyAttempts(w, wait)
+		return
+	}
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
 		http.Error(w, "missing bearer token", http.StatusUnauthorized)
@@ -124,6 +143,7 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	tok, err := s.store.Authenticate(token)
 	if errors.Is(err, store.ErrNotFound) {
+		s.authFailed(ip, "client token")
 		http.Error(w, "invalid or revoked token", http.StatusUnauthorized)
 		return
 	}
@@ -132,6 +152,7 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	s.limiter.succeed(ip)
 
 	allow, allowText, err := parseAllow(r.Header.Get(protocol.HeaderAllow))
 	if err != nil {
@@ -227,6 +248,13 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	t.Close()
 	s.registry.Remove(t)
 	s.log.Info("tunnel down", "key", key, "token", tok.Name)
+}
+
+// authFailed counts a failed login and logs when it gets the client blocked.
+func (s *Server) authFailed(ip, what string) {
+	if s.limiter.fail(ip) {
+		s.log.Warn("too many failed logins, client blocked", "ip", ip, "auth", what, "for", s.cfg.AuthWindow)
+	}
 }
 
 func (s *Server) tunnelURL(sub string) string {

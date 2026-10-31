@@ -323,6 +323,55 @@ func TestAdminTrustedNetworks(t *testing.T) {
 	}
 }
 
+func TestBruteForceBlocked(t *testing.T) {
+	e := newEnv(t, server.Config{AuthMaxFailures: 3, AuthWindow: time.Minute})
+	do := func(remote string, mod func(*http.Request), path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", path, nil)
+		req.Host = domain
+		req.RemoteAddr = remote
+		mod(req)
+		rec := httptest.NewRecorder()
+		e.srv.ServeHTTP(rec, req)
+		return rec
+	}
+	noAuth := func(*http.Request) {}
+	wrong := func(r *http.Request) { r.SetBasicAuth("admin", "guess") }
+	right := func(r *http.Request) { r.SetBasicAuth("admin", "pw") }
+
+	// The browser's first request carries no credentials and is not a guess.
+	for range 5 {
+		if code := do("198.51.100.1:1", noAuth, "/api/info").Code; code != http.StatusUnauthorized {
+			t.Fatalf("no credentials: %d", code)
+		}
+	}
+	for range 3 {
+		do("198.51.100.1:1", wrong, "/api/info")
+	}
+	rec := do("198.51.100.1:1", right, "/api/info")
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("after 3 wrong passwords: %d %q", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	if code := do("198.51.100.2:1", right, "/api/info").Code; code != http.StatusOK {
+		t.Fatalf("other IP: %d", code)
+	}
+
+	// Bad client tokens count too, and block the connect endpoint.
+	bearer := func(tok string) func(*http.Request) {
+		return func(r *http.Request) { r.Header.Set("Authorization", "Bearer "+tok) }
+	}
+	for range 3 {
+		if code := do("198.51.100.3:1", bearer("tsm_nope"), protocol.ConnectPath).Code; code != http.StatusUnauthorized {
+			t.Fatalf("bad token: %d", code)
+		}
+	}
+	if code := do("198.51.100.3:1", bearer(e.secret), protocol.ConnectPath).Code; code != http.StatusTooManyRequests {
+		t.Fatalf("connect after 3 bad tokens: %d", code)
+	}
+	if code := do("198.51.100.3:1", right, "/api/info").Code; code != http.StatusTooManyRequests {
+		t.Fatalf("admin after 3 bad tokens: %d", code)
+	}
+}
+
 func TestRejectsBadToken(t *testing.T) {
 	e := setup(t, http.NotFoundHandler())
 	err := client.Run(context.Background(), client.Options{

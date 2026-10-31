@@ -61,12 +61,23 @@ func (s *Server) basicAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		ip := clientIP(r)
+		if wait := s.limiter.blocked(ip); wait > 0 {
+			tooManyAttempts(w, wait)
+			return
+		}
 		_, pass, ok := r.BasicAuth()
 		if !ok || subtle.ConstantTimeCompare([]byte(pass), []byte(s.cfg.AdminPassword)) != 1 {
+			// A request without credentials is the browser asking for the
+			// login prompt, not a guess.
+			if ok {
+				s.authFailed(ip, "admin password")
+			}
 			w.Header().Set("WWW-Authenticate", `Basic realm="tamsyam admin"`)
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		s.limiter.succeed(ip)
 		next.ServeHTTP(w, r)
 	})
 }
