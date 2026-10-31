@@ -15,7 +15,9 @@ browser ──https──> Caddy (*.t.example.com, wildcard TLS)
 
 ## Features
 
-- **HTTP tunnels** on a random or chosen subdomain. WebSocket, SSE and HMR work. The terminal shows a live request log and a summary on exit.
+- **HTTP tunnels** on a random or chosen subdomain; a chosen one is reserved for your token. WebSocket, SSE and HMR work. The terminal shows a live request log and a summary on exit.
+- **Password-protected tunnels** (`--auth user:pass`) and **static folders** (`ts http ./dist`, with single-page-app fallback).
+- **Config file and service:** several tunnels from `ts.yml` with `ts start`, and `ts service install` to keep them up after reboots.
 - **TCP tunnels** (`ts tcp 5432`): the server opens a public port from `TAMSYAM_TCP_PORTS` and returns `tcp://t.example.com:20017`. Good for Postgres, Redis, SSH, RDP or any TCP. A port requested with `-p` is reserved for the token. TCP bypasses Caddy, so forward the range on your router.
 - **IP allow lists** (`--allow 203.0.113.0/24,198.51.100.7`) for HTTP and TCP.
 - **Request inspector:** the last 200 requests per tunnel with headers and bodies (up to 32 KB each, gzip decoded, JSON pretty-printed). Replay a request or copy it as curl.
@@ -51,13 +53,51 @@ ts http 8080              # random subdomain
 ts http 3000 -s myapp     # https://myapp.t.example.com
 ts http 192.168.1.5:80    # any host:port
 ts http 8080 --allow 203.0.113.0/24   # only from these IPs
+ts http 8080 --auth me:secret         # ask for a password
+ts http ./dist            # serve a folder
 
 ts tcp 5432               # tcp://t.example.com:<random port>
 ts tcp 22 -p 20022        # fixed port, reserved for your token
 ts tcp 5432 -q            # no connection log
 ```
 
-The client reconnects on its own and keeps the same address.
+A directory instead of a port is served as static files; unknown paths without an extension fall back to `index.html`. With `--auth`, the server asks for the password and strips it before the request reaches your app.
+
+The client reconnects on its own and keeps the same address. A subdomain or port you ask for explicitly (`-s`, `-p`) is reserved for your token: no other token can take it until you free it in the admin panel.
+
+### Several tunnels: ts.yml
+
+```yaml
+# server and token default to ts login
+tunnels:
+  api:
+    addr: 8080
+    subdomain: myapi
+    auth: me:secret
+  site:
+    addr: ./dist            # relative to this file
+  db:
+    proto: tcp
+    addr: 5432
+    port: 20022
+    allow: [203.0.113.0/24]
+```
+
+```bash
+ts start                  # all tunnels from ./ts.yml
+ts start api site         # only these
+ts start --config ~/tunnels.yml
+```
+
+### Run as a service
+
+```bash
+sudo ts service install --config /path/to/ts.yml   # systemd / launchd; elevated PowerShell on Windows
+ts service install --user                           # Linux/macOS, without root
+ts service status | stop | start | restart | uninstall
+```
+
+The service runs `ts start` with that config and the saved login, starts at boot and logs to `ts.log` next to the config file. With `--user` on Linux, run `loginctl enable-linger` so it starts without a login.
 
 ## Deploy the server
 
@@ -118,9 +158,10 @@ Pushing a `vX.Y.Z` tag releases the client and server through GoReleaser and pub
 ## Roadmap
 
 - Inspector: edit before replay, live updates, filters.
-- Subdomains reserved per token, per-token limits.
-- Basic auth and rate limits per tunnel (`ts http 8080 --auth user:pass`).
-- `ts http --file-server ./dist`, client geolocation via GeoLite2.
+- Webhook capture: keep requests while the client is offline and replay them later.
+- Tunnels without a client (`ssh -R`), SSH access to a machine without sshd.
+- Custom domains per tunnel, traffic rules (headers, CORS, rate limits), OAuth in front of a tunnel.
+- Per-token limits, client geolocation via GeoLite2.
 - Users and OAuth in the admin panel instead of a single password, Prometheus metrics.
 
 ## License

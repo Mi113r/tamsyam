@@ -7,6 +7,8 @@ toolchain go1.27.3
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/hashicorp/yamux v0.1.2
+	github.com/kardianos/service v1.3.0
+	go.yaml.in/yaml/v3 v3.0.5
 	modernc.org/sqlite v1.61.0
 )
 

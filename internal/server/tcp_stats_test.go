@@ -238,3 +238,79 @@ func TestStatsAndEvents(t *testing.T) {
 		t.Fatalf("live stats: %+v", s)
 	}
 }
+
+func TestSubdomainReservation(t *testing.T) {
+	e := newEnv(t, server.Config{})
+	_, stop := e.connect(t, client.Options{Subdomain: "mine", Target: "127.0.0.1:1"})
+	stop()
+	// A random subdomain is not pinned, even across reconnects.
+	_, stop = e.connect(t, client.Options{Target: "127.0.0.1:1"})
+	stop()
+
+	var created struct{ Secret string }
+	e.adminJSON(t, "POST", "/api/tokens", `{"name":"other"}`, &created)
+	err := client.Run(t.Context(), client.Options{Server: e.ts.URL, Token: created.Secret, Subdomain: "mine", Target: "127.0.0.1:1"})
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("other token got %v", err)
+	}
+
+	var res []struct {
+		Kind      string `json:"kind"`
+		Subdomain string `json:"subdomain"`
+		TokenName string `json:"token_name"`
+	}
+	e.adminJSON(t, "GET", "/api/reservations", "", &res)
+	if len(res) != 1 || res[0].Kind != "http" || res[0].Subdomain != "mine" || res[0].TokenName != "test" {
+		t.Fatalf("reservations: %+v", res)
+	}
+	if code := e.adminJSON(t, "DELETE", "/api/reservations/mine", "", nil); code != http.StatusNoContent {
+		t.Fatalf("release: %d", code)
+	}
+	e.connect(t, client.Options{Token: created.Secret, Subdomain: "mine", Target: "127.0.0.1:1"})
+}
+
+func TestTunnelBasicAuth(t *testing.T) {
+	var gotAuth string
+	e := setup(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		_, _ = io.WriteString(w, "secret page")
+	}), func(o *client.Options) { o.Auth = "alice:s3cret" })
+
+	get := func(user, pass string) int {
+		req, _ := http.NewRequest("GET", e.ts.URL+"/", nil)
+		req.Host = "demo." + domain
+		if user != "" {
+			req.SetBasicAuth(user, pass)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if code := get("", ""); code != http.StatusUnauthorized {
+		t.Fatalf("no credentials: %d", code)
+	}
+	if code := get("alice", "wrong"); code != http.StatusUnauthorized {
+		t.Fatalf("wrong password: %d", code)
+	}
+	if code := get("alice", "s3cret"); code != http.StatusOK {
+		t.Fatalf("right password: %d", code)
+	}
+	if gotAuth != "" {
+		t.Fatalf("credentials leaked to the local service: %q", gotAuth)
+	}
+
+	var tunnels []server.TunnelInfo
+	e.adminJSON(t, "GET", "/api/tunnels", "", &tunnels)
+	if !tunnels[0].Auth {
+		t.Fatal("tunnel does not report auth")
+	}
+
+	// Basic auth makes no sense for raw TCP.
+	err := client.Run(t.Context(), client.Options{Server: e.ts.URL, Token: e.secret, Proto: "tcp", Auth: "a:b", Target: "127.0.0.1:1"})
+	if err == nil || !strings.Contains(err.Error(), "only available for HTTP") {
+		t.Fatalf("tcp with auth: %v", err)
+	}
+}

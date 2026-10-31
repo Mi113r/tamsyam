@@ -27,6 +27,8 @@ func (s *Server) adminRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// Revalidate on every load, so an upgraded server is not shown an old UI.
+		w.Header().Set("Cache-Control", "no-cache")
 		_, _ = w.Write(adminHTML)
 	})
 	mux.HandleFunc("GET /api/info", s.apiInfo)
@@ -38,7 +40,7 @@ func (s *Server) adminRoutes() http.Handler {
 	mux.HandleFunc("GET /api/tunnels/{key}/connections", s.apiTunnelConnections)
 	mux.HandleFunc("GET /api/stats", s.apiStats)
 	mux.HandleFunc("GET /api/reservations", s.apiListReservations)
-	mux.HandleFunc("DELETE /api/reservations/{port}", s.apiReleasePort)
+	mux.HandleFunc("DELETE /api/reservations/{name}", s.apiRelease)
 	mux.HandleFunc("GET /api/tokens", s.apiListTokens)
 	mux.HandleFunc("POST /api/tokens", s.apiCreateToken)
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.apiRevokeToken)
@@ -263,14 +265,17 @@ func (s *Server) apiListReservations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
-func (s *Server) apiReleasePort(w http.ResponseWriter, r *http.Request) {
-	port, err := strconv.Atoi(r.PathValue("port"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad port")
-		return
+// apiRelease frees a reserved TCP port (numeric name) or subdomain.
+func (s *Server) apiRelease(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	var err error
+	if port, perr := strconv.Atoi(name); perr == nil {
+		err = s.store.ReleasePort(port)
+	} else {
+		err = s.store.ReleaseSubdomain(strings.ToLower(name))
 	}
-	if err := s.store.ReleasePort(port); errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "port is not reserved")
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not reserved")
 		return
 	} else if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

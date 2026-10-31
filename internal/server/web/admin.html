@@ -233,7 +233,7 @@ pre{margin:6px 0 0;padding:12px;background:var(--soft);border-radius:8px;overflo
       <a href="#/stats" data-p="stats"><svg><use href="#i-chart"/></svg>Статистика</a>
       <div class="group">Доступ</div>
       <a href="#/tokens" data-p="tokens"><svg><use href="#i-key"/></svg>Токены</a>
-      <a href="#/ports" data-p="ports"><svg><use href="#i-ports"/></svg>Порты</a>
+      <a href="#/ports" data-p="ports"><svg><use href="#i-ports"/></svg>Адреса</a>
     </nav>
     <div class="foot"><a href="https://github.com/Mi113r/tamsyam" target="_blank" class="muted">GitHub</a><span id="ver"></span></div>
   </aside>
@@ -273,7 +273,7 @@ async function copy(text) {
 }
 const copyBtn = text => `<button class="iconbtn" title="Копировать" onclick="copy(decodeURIComponent('${enc(text)}'))"><svg><use href="#i-copy"/></svg></button>`;
 // Shell-ish highlighting for command snippets.
-const hl = cmd => esc(cmd).replace(/ (http|tcp|login|install)(?= |$)/g, ' <span class="k">$1</span>')
+const hl = cmd => esc(cmd).replace(/ (http|tcp|login|install|start)(?= |$)/g, ' <span class="k">$1</span>')
   .replace(/ (-{1,2}[a-z-]+)/g, ' <span class="f">$1</span>').replace(/ (\d{2,5})\b/g, ' <span class="n">$1</span>');
 const snippet = cmd => `<div class="copy"><code>${hl(cmd)}</code>${copyBtn(cmd)}</div>`;
 
@@ -335,10 +335,11 @@ async function renderStart(first) {
           <div class="note">Адрес вида https://xxxx.${esc(info.domain || '')} появится в терминале.</div></div>
         <div class="step"><div class="t"><svg width="16" height="16"><use href="#i-book"/></svg>Больше примеров</div>
           <div class="examples">
-            <div><code>ts http 3000 -s myapp</code> · свой поддомен</div>
-            <div><code>ts tcp 5432</code> · Postgres, SSH, Redis, любой TCP</div>
-            <div><code>ts tcp 22 -p 20022</code> · постоянный порт</div>
-            <div><code>ts http 8080 --allow 203.0.113.0/24</code> · только с этих IP</div>
+            <div><code>ts http 3000 -s myapp</code> · свой поддомен, закрепляется за токеном</div>
+            <div><code>ts http 8080 --auth me:secret</code> · вход по паролю</div>
+            <div><code>ts http ./dist</code> · раздать папку</div>
+            <div><code>ts tcp 22 -p 20022</code> · Postgres, SSH, любой TCP на постоянном порту</div>
+            <div><code>ts start</code> · все туннели из ts.yml</div>
           </div></div>
       </div>
     </div>
@@ -387,7 +388,7 @@ function renderTunnels(first) {
     return `<div class="card trow" onclick="openDrawer('${esc(t.key)}')">
       <div><div class="url"><span>${esc(t.url)}</span>${copyBtn(t.url.replace(/^tcp:\/\//, ''))}</div>
         <div class="sub"><span class="dot"></span>${esc(t.target)}<span class="badge${t.proto === 'tcp' ? ' blue' : ''}">${t.proto.toUpperCase()}</span>
-          <span>${esc(t.token_name)}</span>${t.allow && t.allow.length ? '<span class="badge">IP-фильтр</span>' : ''}
+          <span>${esc(t.token_name)}</span>${t.allow && t.allow.length ? '<span class="badge">IP-фильтр</span>' : ''}${t.auth ? '<span class="badge">Пароль</span>' : ''}
           ${errs ? `<span class="s5xx">ошибок: ${errs}</span>` : ''}</div></div>
       <div class="meta">${tunnelMeta(t).map(([l, v]) => `<div><b>${v}</b>${l}</div>`).join('')}</div></div>`;
   }).join('') : `<div class="card empty">Нет подключённых клиентов.<br><br>${snippet('ts http 8080')}<br><a href="#/start">Как подключиться →</a></div>`;
@@ -418,6 +419,7 @@ async function renderDrawer() {
       <tr><td>Токен</td><td>${esc(t.token_name)}</td></tr>
       <tr><td>Клиент</td><td>ts/${esc(t.client_version)} · ${esc(t.client_addr)}</td></tr>
       <tr><td>IP-фильтр</td><td>${t.allow && t.allow.length ? esc(t.allow.join(', ')) : 'нет'}</td></tr>
+      ${t.proto === 'tcp' ? '' : `<tr><td>Пароль</td><td>${t.auth ? 'да, basic auth' : 'нет'}</td></tr>`}
       <tr><td>Подключён</td><td>${fmtDate(t.connected_at)}</td></tr>
     </table>
     <div class="dtiles">${tiles}</div>
@@ -617,24 +619,28 @@ async function createToken(e) {
 }
 async function revoke(id) { if (confirm('Отозвать токен? Его туннели будут отключены.')) { await api('DELETE', `/api/tokens/${id}`); refresh(); } }
 
-/* ---------- ports ---------- */
+/* ---------- reserved addresses ---------- */
 async function renderPorts(first) {
-  if (first) $('page').innerHTML = `<h1>Порты</h1><p class="lead" id="portsLead"></p><div class="card tablewrap"><table id="reservations"></table></div>`;
-  if (!info.tcp_ports) {
-    $('portsLead').innerHTML = 'TCP-туннели на этом сервере выключены. Задайте <code>TAMSYAM_TCP_PORTS</code>, например <code>20000-20099</code>, и пробросьте этот диапазон на роутере.';
-    $('reservations').innerHTML = ''; return;
-  }
-  $('portsLead').innerHTML = `Закреплённые порты TCP-туннелей. Диапазон сервера: <code>${esc(info.tcp_ports)}</code>. Порт закрепляется за токеном при запуске <code>ts tcp &lt;порт&gt; -p &lt;публичный&gt;</code>.`;
+  if (first) $('page').innerHTML = `<h1>Адреса</h1><p class="lead" id="portsLead"></p><div class="card tablewrap"><table id="reservations"></table></div>`;
+  const tcp = info.tcp_ports
+    ? `TCP-порт закрепляется командой <code>ts tcp &lt;порт&gt; -p &lt;публичный&gt;</code>, диапазон сервера <code>${esc(info.tcp_ports)}</code>.`
+    : 'TCP-туннели на этом сервере выключены: задайте <code>TAMSYAM_TCP_PORTS</code>, например <code>20000-20099</code>, и пробросьте диапазон на роутере.';
+  $('portsLead').innerHTML = `Поддомены и порты, закреплённые за токенами: другой токен их не займёт. Поддомен закрепляется командой <code>ts http &lt;порт&gt; -s &lt;имя&gt;</code>. ${tcp}`;
   const list = await api('GET', '/api/reservations');
   if (page !== 'ports') return;
-  const live = new Set(tunnels.filter(t => t.proto === 'tcp').map(t => t.port));
-  $('reservations').innerHTML = list.length ? `<tr><th>Порт</th><th>Адрес</th><th>Токен</th><th>Закреплён</th><th></th></tr>` +
-    list.map(r => `<tr><td><b>${r.port}</b></td><td>${esc(info.domain)}:${r.port} ${live.has(r.port) ? '<span class="dot" title="туннель активен"></span>' : ''}</td>
+  const live = new Set(tunnels.map(t => t.key));
+  $('reservations').innerHTML = list.length ? `<tr><th>Тип</th><th>Адрес</th><th>Токен</th><th>Закреплён</th><th></th></tr>` +
+    list.map(r => {
+      const http = r.kind === 'http', name = http ? r.subdomain : String(r.port);
+      const addr = http ? `${r.subdomain}.${info.domain}` : `${info.domain}:${r.port}`;
+      const on = live.has(http ? r.subdomain : 'tcp:' + r.port);
+      return `<tr><td><span class="badge">${http ? 'HTTP' : 'TCP'}</span></td><td><b>${esc(addr)}</b> ${on ? '<span class="dot" title="туннель активен"></span>' : ''}</td>
       <td>${esc(r.token_name || '#' + r.token_id)}</td><td class="muted">${ago(r.created_at)} назад</td>
-      <td class="num"><button class="btn sm danger" onclick="releasePort(${r.port})">Освободить</button></td></tr>`).join('')
-    : `<tr><td class="empty">Закреплённых портов нет</td></tr>`;
+      <td class="num"><button class="btn sm danger" onclick="releaseAddr('${esc(name)}')">Освободить</button></td></tr>`;
+    }).join('')
+    : `<tr><td class="empty">Закреплённых адресов нет</td></tr>`;
 }
-async function releasePort(port) { if (confirm(`Освободить порт ${port}? Другой токен сможет его занять.`)) { await api('DELETE', `/api/reservations/${port}`); refresh(); } }
+async function releaseAddr(name) { if (confirm(`Освободить ${name}? Другой токен сможет его занять.`)) { await api('DELETE', `/api/reservations/${encodeURIComponent(name)}`); refresh(); } }
 
 /* ---------- refresh loop ---------- */
 async function refresh() {

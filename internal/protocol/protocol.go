@@ -24,12 +24,14 @@ const (
 	HeaderProto = "X-Tamsyam-Proto" // "http" (default) or "tcp"
 	HeaderPort  = "X-Tamsyam-Port"  // requested public TCP port
 	HeaderAllow = "X-Tamsyam-Allow" // comma-separated IPs/CIDRs allowed to connect
-	// HeaderReconnect marks a reconnect to the previously assigned port, which
+	// HeaderReconnect marks a reconnect to the previously assigned port or subdomain, which
 	// must not create a permanent port reservation.
 	HeaderReconnect = "X-Tamsyam-Reconnect"
 	HeaderSubdomain = "X-Tamsyam-Subdomain"
-	HeaderTarget    = "X-Tamsyam-Target"
-	HeaderVersion   = "X-Tamsyam-Version"
+	// HeaderAuth is "user:password" for HTTP basic auth in front of the tunnel.
+	HeaderAuth    = "X-Tamsyam-Auth"
+	HeaderTarget  = "X-Tamsyam-Target"
+	HeaderVersion = "X-Tamsyam-Version"
 
 	// Response headers (server -> client) on a successful upgrade.
 	HeaderURL = "X-Tamsyam-URL"

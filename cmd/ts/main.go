@@ -1,9 +1,10 @@
-// Command ts (tamsyam client) exposes a local HTTP service through a tamsyam server.
+// Command ts (tamsyam client) exposes local services through a tamsyam server.
 //
 //	ts login https://t.example.com tsm_xxx
 //	ts http 8080
 //	ts http 3000 -s myapp
 //	ts tcp 5432 -p 20017
+//	ts start            # tunnels from ts.yml
 package main
 
 import (
@@ -12,36 +13,44 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/Mi113r/tamsyam/internal/client"
 	"github.com/Mi113r/tamsyam/internal/protocol"
 )
 
+// config is the saved login (ts login).
 type config struct {
 	Server string `json:"server"`
 	Token  string `json:"token"`
 }
 
+// out receives everything ts prints; the service mode also copies it to a log file.
+var out io.Writer = os.Stdout
+
 const usage = `ts — expose a local service to the internet (tamsyam client)
 
 Usage:
   ts login <server-url> <token>   save server and token
-  ts http <port|host:port> [-s subdomain] [--allow cidr,...] [-q]
+  ts http <port|host:port|dir> [-s subdomain] [--auth user:pass] [--allow cidr,...] [-q]
   ts tcp  <port|host:port> [-p public-port] [--allow cidr,...] [-q]
+  ts start [name ...] [--config ts.yml] [-q]   run tunnels from a config file
+  ts service install|uninstall|start|stop|restart|status [--config ts.yml] [--user]
   ts version
 
 Flags for http/tcp:
-  -s, -p      fixed subdomain / public TCP port (a port is reserved for your token)
+  -s, -p      fixed subdomain / public TCP port, reserved for your token
+  --auth      require HTTP basic auth (user:password) in front of the tunnel
   --allow     only these IPs/CIDRs may use the tunnel, e.g. 203.0.113.0/24,198.51.100.7
   -q          do not print requests and connections
   --server, --token   override the saved login
+
+A directory instead of a port (ts http ./dist) is served as static files.
 `
 
 func main() {
@@ -55,6 +64,10 @@ func main() {
 		err = cmdLogin(os.Args[2:])
 	case "http", "tcp":
 		err = cmdTunnel(os.Args[1], os.Args[2:])
+	case "start":
+		err = cmdStart(os.Args[2:])
+	case "service":
+		err = cmdService(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("tamsyam", protocol.Version)
 	default:
@@ -92,11 +105,12 @@ func cmdLogin(args []string) error {
 
 func cmdTunnel(proto string, args []string) error {
 	fs := flag.NewFlagSet(proto, flag.ContinueOnError)
-	var sub, port *string
+	spec := tunnelSpec{Proto: proto}
 	if proto == "http" {
-		sub = fs.String("s", "", "requested subdomain")
+		fs.StringVar(&spec.Subdomain, "s", "", "requested subdomain (reserved for your token)")
+		fs.StringVar(&spec.Auth, "auth", "", "require basic auth, user:password")
 	} else {
-		port = fs.String("p", "", "public TCP port (reserved for your token)")
+		fs.StringVar(&spec.Port, "p", "", "public TCP port (reserved for your token)")
 	}
 	allow := fs.String("allow", "", "comma-separated IPs/CIDRs allowed to connect")
 	quiet := fs.Bool("q", false, "do not print requests and connections")
@@ -110,70 +124,34 @@ func cmdTunnel(proto string, args []string) error {
 	if fs.NArg() < 1 {
 		return fmt.Errorf("usage: ts %s <port|host:port>", proto)
 	}
-	target := fs.Arg(0)
+	spec.Addr = fs.Arg(0)
 	if err := fs.Parse(fs.Args()[1:]); err != nil {
 		return err
 	}
-	if !strings.Contains(target, ":") {
-		target = "localhost:" + target
-	}
+	spec.Allow = stringList{*allow}
 
-	cfg := loadConfig()
-	if *server != "" {
-		cfg.Server = *server
+	login, err := resolveLogin(config{Server: *server, Token: *token})
+	if err != nil {
+		return err
 	}
-	if *token != "" {
-		cfg.Token = *token
-	}
-	if cfg.Server == "" || cfg.Token == "" {
-		return errors.New("not logged in: run `ts login <server-url> <token>` first")
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	return runTunnels(ctx, login, []tunnelSpec{spec}, *quiet)
+}
 
-	opts := client.Options{
-		Server: cfg.Server,
-		Token:  cfg.Token,
-		Proto:  proto,
-		Allow:  *allow,
-		Target: target,
-		OnConnect: func(url string) {
-			local := target
-			if proto == "http" {
-				local = "http://" + target
-			}
-			fmt.Printf("\n  Forwarding  %s  ->  %s\n", url, local)
-			if *allow != "" {
-				fmt.Printf("  Allowed     %s\n", *allow)
-			}
-			fmt.Printf("\n  Ctrl+C to stop\n\n")
-		},
-		OnDisconnect: func(err error, retry time.Duration) {
-			fmt.Printf("connection lost (%v), reconnecting in %s...\n", err, retry)
-		},
+// resolveLogin fills what override leaves empty from the saved login.
+func resolveLogin(override config) (config, error) {
+	cfg := loadConfig()
+	if override.Server != "" {
+		cfg.Server = override.Server
 	}
-	if sub != nil {
-		opts.Subdomain = *sub
+	if override.Token != "" {
+		cfg.Token = override.Token
 	}
-	if port != nil {
-		opts.Port = *port
+	if cfg.Server == "" || cfg.Token == "" {
+		return cfg, errors.New("not logged in: run `ts login <server-url> <token>` first")
 	}
-
-	var sum summary
-	opts.OnEvent = func(ev protocol.Event) {
-		sum.add(ev)
-		if !*quiet {
-			fmt.Println(formatEvent(ev))
-		}
-	}
-
-	fmt.Printf("tamsyam %s · connecting to %s\n", protocol.Version, cfg.Server)
-	err := client.Run(ctx, opts)
-	if s := sum.String(); s != "" {
-		fmt.Println("\n" + s)
-	}
-	return err
+	return cfg, nil
 }
 
 func formatEvent(ev protocol.Event) string {
@@ -262,7 +240,14 @@ func formatBytes(n int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
+// loginFile overrides the saved login location (the service passes the
+// installing user's file, since it runs as another account).
+var loginFile string
+
 func configPath() (string, error) {
+	if loginFile != "" {
+		return loginFile, nil
+	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err

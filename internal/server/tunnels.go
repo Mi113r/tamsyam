@@ -22,8 +22,9 @@ import (
 )
 
 var (
-	errSubdomainTaken   = errors.New("subdomain is already in use")
-	errSubdomainInvalid = errors.New("subdomain must be 1-63 chars of a-z, 0-9 and '-'")
+	errSubdomainTaken    = errors.New("subdomain is already in use")
+	errSubdomainReserved = errors.New("subdomain is reserved by another token")
+	errSubdomainInvalid  = errors.New("subdomain must be 1-63 chars of a-z, 0-9 and '-'")
 
 	subdomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 	reserved    = map[string]bool{"www": true, "admin": true, "api": true, "mail": true, "app": true}
@@ -44,6 +45,7 @@ type TunnelInfo struct {
 	URL         string    `json:"url"`
 	Target      string    `json:"target"`
 	Allow       []string  `json:"allow"`
+	Auth        bool      `json:"auth"` // HTTP basic auth in front of the tunnel
 	TokenID     int64     `json:"token_id"`
 	TokenName   string    `json:"token_name"`
 	ClientAddr  string    `json:"client_addr"`
@@ -57,14 +59,16 @@ type TunnelInfo struct {
 type Tunnel struct {
 	TunnelInfo
 
-	session  *yamux.Session
-	proxy    *httputil.ReverseProxy // HTTP only
-	listener net.Listener           // TCP only
-	allow    []netip.Prefix
-	stats    *Collector
-	live     liveStats
-	events   chan protocol.Event
-	seq      atomic.Uint64
+	session   *yamux.Session
+	proxy     *httputil.ReverseProxy // HTTP only
+	listener  net.Listener           // TCP only
+	allow     []netip.Prefix
+	auth      *basicCreds // HTTP only
+	authFails *authLimiter
+	stats     *Collector
+	live      liveStats
+	events    chan protocol.Event
+	seq       atomic.Uint64
 
 	logMu sync.Mutex
 	log   []*exchange // HTTP ring buffer, newest last
@@ -72,7 +76,8 @@ type Tunnel struct {
 }
 
 func newTunnel(sess *yamux.Session, stats *Collector) *Tunnel {
-	t := &Tunnel{session: sess, stats: stats, events: make(chan protocol.Event, eventBuffer)}
+	t := &Tunnel{session: sess, stats: stats, events: make(chan protocol.Event, eventBuffer),
+		authFails: newAuthLimiter(tunnelAuthMaxFailures, tunnelAuthWindow)}
 	t.ConnectedAt = time.Now().UTC()
 	return t
 }
@@ -113,6 +118,9 @@ func (t *Tunnel) enableHTTP() {
 func (t *Tunnel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !t.allowed(clientIP(r)) {
 		renderError(w, http.StatusForbidden, "Access denied", "Your IP address is not allowed to use this tunnel.")
+		return
+	}
+	if !t.checkAuth(w, r) {
 		return
 	}
 	t.serve(w, r, false)

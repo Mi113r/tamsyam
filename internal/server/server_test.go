@@ -400,7 +400,7 @@ func TestSubdomainConflict(t *testing.T) {
 	err = client.Run(context.Background(), client.Options{
 		Server: e.ts.URL, Token: other, Subdomain: "demo", Target: "127.0.0.1:1",
 	})
-	if err == nil || !strings.Contains(err.Error(), "already in use") {
+	if err == nil || !strings.Contains(err.Error(), "reserved by another token") {
 		t.Fatalf("err = %v", err)
 	}
 }

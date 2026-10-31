@@ -25,6 +25,7 @@ type Options struct {
 	Subdomain string // HTTP: empty lets the server pick one
 	Port      string // TCP: public port to reserve; empty lets the server pick one
 	Allow     string // comma-separated IPs/CIDRs allowed to use the tunnel
+	Auth      string // HTTP: "user:password" basic auth in front of the tunnel
 	Target    string // host:port of the local service
 
 	// OnConnect is called with the public URL after every (re)connect.
@@ -48,9 +49,10 @@ func Run(ctx context.Context, opts Options) error {
 		connectedAt := time.Now()
 		url, sess, err := dial(ctx, opts, reconnect)
 		if err == nil {
-			// Keep the same address across reconnects.
+			// Keep the same address across reconnects. Marking them as
+			// reconnects stops the server from pinning a picked address to the token.
 			if opts.Subdomain == "" && opts.Proto != "tcp" {
-				opts.Subdomain = subdomainOf(url)
+				opts.Subdomain, reconnect = subdomainOf(url), true
 			}
 			if opts.Port == "" && opts.Proto == "tcp" {
 				opts.Port, reconnect = portOf(url), true
@@ -95,6 +97,7 @@ func dial(ctx context.Context, opts Options, reconnect bool) (string, *yamux.Ses
 		protocol.HeaderSubdomain: opts.Subdomain,
 		protocol.HeaderPort:      opts.Port,
 		protocol.HeaderAllow:     opts.Allow,
+		protocol.HeaderAuth:      opts.Auth,
 	} {
 		if v != "" {
 			hdr.Set(h, v)

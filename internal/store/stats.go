@@ -39,6 +39,11 @@ CREATE TABLE IF NOT EXISTS port_reservations (
 	port       INTEGER PRIMARY KEY,
 	token_id   INTEGER NOT NULL,
 	created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS subdomain_reservations (
+	subdomain  TEXT PRIMARY KEY,
+	token_id   INTEGER NOT NULL,
+	created_at INTEGER NOT NULL
 );`
 
 // StatDelta is a set of counters for one tunnel and minute (or an aggregate of them).
@@ -208,8 +213,11 @@ func (s *Store) PurgeStats(before time.Time) error {
 	return err
 }
 
+// Reservation pins a TCP port ("tcp") or a subdomain ("http") to a token.
 type Reservation struct {
-	Port      int       `json:"port"`
+	Kind      string    `json:"kind"`
+	Port      int       `json:"port,omitempty"`
+	Subdomain string    `json:"subdomain,omitempty"`
 	TokenID   int64     `json:"token_id"`
 	TokenName string    `json:"token_name"`
 	CreatedAt time.Time `json:"created_at"`
@@ -227,17 +235,42 @@ func (s *Store) ReservePort(port int, tokenID int64) (int64, error) {
 }
 
 func (s *Store) PortOwner(port int) (int64, bool, error) {
+	return s.owner(`SELECT token_id FROM port_reservations WHERE port = ?`, port)
+}
+
+// ReserveSubdomain pins sub to tokenID unless another token already holds it,
+// and returns the owner.
+func (s *Store) ReserveSubdomain(sub string, tokenID int64) (int64, error) {
+	if _, err := s.db.Exec(`INSERT OR IGNORE INTO subdomain_reservations (subdomain, token_id, created_at) VALUES (?, ?, ?)`,
+		sub, tokenID, time.Now().UTC().Unix()); err != nil {
+		return 0, err
+	}
+	owner, _, err := s.SubdomainOwner(sub)
+	return owner, err
+}
+
+func (s *Store) SubdomainOwner(sub string) (int64, bool, error) {
+	return s.owner(`SELECT token_id FROM subdomain_reservations WHERE subdomain = ?`, sub)
+}
+
+func (s *Store) owner(query string, key any) (int64, bool, error) {
 	var owner int64
-	err := s.db.QueryRow(`SELECT token_id FROM port_reservations WHERE port = ?`, port).Scan(&owner)
+	err := s.db.QueryRow(query, key).Scan(&owner)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
 	return owner, err == nil, err
 }
 
+// ListReservations returns subdomains first, then ports.
 func (s *Store) ListReservations() ([]Reservation, error) {
-	rows, err := s.db.Query(`SELECT r.port, r.token_id, COALESCE(t.name, ''), r.created_at
-		FROM port_reservations r LEFT JOIN tokens t ON t.id = r.token_id ORDER BY r.port`)
+	rows, err := s.db.Query(`
+		SELECT 'http', 0, r.subdomain, r.token_id, COALESCE(t.name, ''), r.created_at
+		FROM subdomain_reservations r LEFT JOIN tokens t ON t.id = r.token_id
+		UNION ALL
+		SELECT 'tcp', r.port, '', r.token_id, COALESCE(t.name, ''), r.created_at
+		FROM port_reservations r LEFT JOIN tokens t ON t.id = r.token_id
+		ORDER BY 1, 2, 3`)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +281,7 @@ func (s *Store) ListReservations() ([]Reservation, error) {
 			r       Reservation
 			created int64
 		)
-		if err := rows.Scan(&r.Port, &r.TokenID, &r.TokenName, &created); err != nil {
+		if err := rows.Scan(&r.Kind, &r.Port, &r.Subdomain, &r.TokenID, &r.TokenName, &created); err != nil {
 			return nil, err
 		}
 		r.CreatedAt = time.Unix(created, 0).UTC()
@@ -258,7 +291,15 @@ func (s *Store) ListReservations() ([]Reservation, error) {
 }
 
 func (s *Store) ReleasePort(port int) error {
-	res, err := s.db.Exec(`DELETE FROM port_reservations WHERE port = ?`, port)
+	return s.release(`DELETE FROM port_reservations WHERE port = ?`, port)
+}
+
+func (s *Store) ReleaseSubdomain(sub string) error {
+	return s.release(`DELETE FROM subdomain_reservations WHERE subdomain = ?`, sub)
+}
+
+func (s *Store) release(query string, key any) error {
+	res, err := s.db.Exec(query, key)
 	if err != nil {
 		return err
 	}

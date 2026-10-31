@@ -163,32 +163,47 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if target == "" {
 		target = "localhost"
 	}
+	// An explicitly requested port or subdomain is pinned to the token; a
+	// reconnect to a server-picked one is not.
+	reserve := r.Header.Get(protocol.HeaderReconnect) == ""
 
 	var (
 		proto = strings.ToLower(r.Header.Get(protocol.HeaderProto))
+		auth  *basicCreds
 		key   string
 		sub   string
 		port  int
 		url   string
 		ln    net.Listener
 	)
+	if v := r.Header.Get(protocol.HeaderAuth); v != "" {
+		if auth, err = parseBasicCreds(v); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	switch proto {
 	case "", "http":
 		proto = "http"
 		sub = strings.ToLower(r.Header.Get(protocol.HeaderSubdomain))
 		if sub == "" {
-			for sub = randomSubdomain(); s.registry.Get(sub) != nil; sub = randomSubdomain() {
+			for sub = randomSubdomain(); s.subdomainBusy(sub); sub = randomSubdomain() {
 			}
-		} else if !validSubdomain(sub) {
-			http.Error(w, errSubdomainInvalid.Error(), http.StatusBadRequest)
-			return
-		} else if s.registry.Taken(sub, tok.ID) {
-			http.Error(w, errSubdomainTaken.Error(), http.StatusConflict)
+		} else if err := s.claimSubdomain(sub, tok.ID, reserve); err != nil {
+			code := http.StatusConflict
+			if errors.Is(err, errSubdomainInvalid) {
+				code = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), code)
 			return
 		}
 		key, url = sub, s.tunnelURL(sub)
 	case "tcp":
-		ln, port, err = s.listenTCP(tok.ID, r.Header.Get(protocol.HeaderPort), r.Header.Get(protocol.HeaderReconnect) == "")
+		if auth != nil {
+			http.Error(w, "basic auth is only available for HTTP tunnels", http.StatusBadRequest)
+			return
+		}
+		ln, port, err = s.listenTCP(tok.ID, r.Header.Get(protocol.HeaderPort), reserve)
 		switch {
 		case errors.Is(err, errTCPDisabled), errors.Is(err, errPortRange):
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -227,6 +242,7 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	t := newTunnel(sess, s.stats)
 	t.Key, t.Proto, t.Subdomain, t.Port, t.URL, t.Target = key, proto, sub, port, url, target
 	t.allow, t.Allow = allow, allowText
+	t.auth, t.Auth = auth, auth != nil
 	t.TokenID, t.TokenName = tok.ID, tok.Name
 	t.ClientAddr, t.ClientVer = clientIP(r), r.Header.Get(protocol.HeaderVersion)
 	t.listener = ln
@@ -248,6 +264,36 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	t.Close()
 	s.registry.Remove(t)
 	s.log.Info("tunnel down", "key", key, "token", tok.Name)
+}
+
+// subdomainBusy reports whether a server-picked subdomain would collide.
+func (s *Server) subdomainBusy(sub string) bool {
+	_, reserved, err := s.store.SubdomainOwner(sub)
+	return reserved || err != nil || s.registry.Get(sub) != nil
+}
+
+// claimSubdomain checks that tokenID may use sub and, if reserve is set,
+// pins it to the token.
+func (s *Server) claimSubdomain(sub string, tokenID int64, reserve bool) error {
+	if !validSubdomain(sub) {
+		return errSubdomainInvalid
+	}
+	if owner, ok, err := s.store.SubdomainOwner(sub); err != nil {
+		return err
+	} else if ok && owner != tokenID {
+		return errSubdomainReserved
+	}
+	if s.registry.Taken(sub, tokenID) {
+		return errSubdomainTaken
+	}
+	if !reserve {
+		return nil
+	}
+	owner, err := s.store.ReserveSubdomain(sub, tokenID)
+	if err == nil && owner != tokenID {
+		err = errSubdomainReserved
+	}
+	return err
 }
 
 // authFailed counts a failed login and logs when it gets the client blocked.
