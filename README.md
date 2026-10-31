@@ -56,7 +56,7 @@ GOOS=linux GOARCH=amd64 go build -o bin/tamsyam-server ./cmd/tamsyam-server
 
 ## Развёртывание (Proxmox + Caddy + Cloudflare)
 
-Подробная пошаговая инструкция с проверками и откатом, рассчитанная на агента: [DEPLOY.md](DEPLOY.md). Ниже краткая версия.
+Подробная пошаговая инструкция с проверками и откатом, рассчитанная на агента: [DEPLOY.md](DEPLOY.md). Обновление, доступ из LAN и VPN, пароли и токены на уже работающем сервере описаны в [AGENTS.md](AGENTS.md). Ниже краткая версия.
 
 1. **DNS в Cloudflare:** записи `A t` и `A *.t` на белый IP, режим **DNS only** (серое облако). Universal SSL Cloudflare не покрывает поддомены второго уровня, и прокси Cloudflare обрывал бы долгие соединения.
 2. **Caddy:** соберите с модулем `caddy-dns/cloudflare` и возьмите [deploy/Caddyfile](deploy/Caddyfile). Нужен API-токен с правом `Zone:DNS:Edit`.
