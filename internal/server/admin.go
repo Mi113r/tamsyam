@@ -20,6 +20,9 @@ import (
 //go:embed web/admin.html
 var adminHTML []byte
 
+//go:embed web/logo.svg
+var logoSVG []byte
+
 func (s *Server) adminRoutes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -40,12 +43,17 @@ func (s *Server) adminRoutes() http.Handler {
 	mux.HandleFunc("POST /api/tokens", s.apiCreateToken)
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.apiRevokeToken)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) })
+	mux.HandleFunc("GET /favicon.svg", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/svg+xml")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		_, _ = w.Write(logoSVG)
+	})
 	return s.basicAuth(mux)
 }
 
 func (s *Server) basicAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		if r.URL.Path == "/healthz" || r.URL.Path == "/favicon.svg" {
 			next.ServeHTTP(w, r)
 			return
 		}

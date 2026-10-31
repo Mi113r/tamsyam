@@ -263,6 +263,9 @@ func TestAdminRequiresPassword(t *testing.T) {
 	if code, _ := e.get(t, domain, "/api/tunnels"); code != http.StatusUnauthorized {
 		t.Fatalf("no auth: got %d", code)
 	}
+	if code, body := e.get(t, domain, "/favicon.svg"); code != http.StatusOK || !strings.HasPrefix(body, "<svg") {
+		t.Fatalf("favicon: %d %.40s", code, body)
+	}
 	req, _ := http.NewRequest("GET", e.ts.URL+"/api/tunnels", nil)
 	req.SetBasicAuth("admin", "pw")
 	resp, err := http.DefaultClient.Do(req)

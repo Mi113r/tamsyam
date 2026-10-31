@@ -4,6 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>tamsyam</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<script>
+// Theme: "system" follows the OS; "light"/"dark" are pinned. The resolved value
+// lands in <html data-theme> before first paint, so there is no flash.
+(() => {
+  const os = matchMedia('(prefers-color-scheme: dark)');
+  let pref = 'system';
+  try { pref = localStorage.getItem('tsm.theme') || pref; } catch {}
+  window.theme = {
+    get pref() { return pref; },
+    set(p) { pref = p; try { localStorage.setItem('tsm.theme', p); } catch {} this.apply(); },
+    apply() { document.documentElement.dataset.theme = pref === 'system' ? (os.matches ? 'dark' : 'light') : pref; },
+  };
+  os.addEventListener('change', () => theme.apply());
+  theme.apply();
+})();
+</script>
 <style>
 :root{
   --font:ui-monospace,"JetBrains Mono","Cascadia Code","SF Mono",Menlo,Consolas,monospace;
@@ -13,13 +30,14 @@
   --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 16px rgba(16,24,40,.06);
   --c-2xx:#0ca30c;--c-3xx:#2a78d6;--c-4xx:#fab219;--c-5xx:#d03b3b;--c-in:#2a78d6;--c-out:#eb6834;
 }
-@media (prefers-color-scheme:dark){:root{
+html{color-scheme:light}
+:root[data-theme=dark]{color-scheme:dark;
   --bg:#111317;--side:#15181d;--card:#181b21;--soft:#1f232a;--hover:#22262e;--sel:#262c37;
   --fg:#e6e8ee;--fg2:#b4bac6;--muted:#7d8594;--line:#262a33;--grid:#22262e;
   --accent:#6b9bff;--accent-soft:#1c2740;--ok:#3ccf7a;--warn:#fab219;--danger:#ff6b6b;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.35);
   --c-3xx:#3987e5;--c-in:#3987e5;--c-out:#d95926;
-}}
+}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--fg);font:13.5px/1.55 var(--font);-webkit-font-smoothing:antialiased}
@@ -30,7 +48,10 @@ code,.mono{font-family:var(--font)}
 /* layout */
 .app{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh}
 .side{background:var(--side);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh}
-.brand{font-size:22px;font-weight:700;letter-spacing:-.02em;padding:2px 8px 10px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 4px 10px 8px}
+.brand{display:flex;align-items:center;gap:9px;font-size:20px;font-weight:700;letter-spacing:-.02em;color:var(--fg)}
+.brand svg{width:26px;height:26px;flex:none}
+.theme svg{width:17px;height:17px}
 .server{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 10px;margin:0 0 12px;font-size:12.5px;overflow:hidden}
 .server .av{flex:none;width:20px;height:20px;border-radius:50%;background:#fdf1d8;color:#b26b00;display:grid;place-items:center;font-size:11px;font-weight:700}
 .server span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -48,7 +69,7 @@ h2{font-size:15px;margin:32px 0 12px;font-weight:700}
 @media (max-width:860px){
   .app{grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr}
   .side{position:sticky;top:0;z-index:5;height:auto;min-width:0;flex-direction:column;align-items:stretch;padding:10px 12px 6px;gap:4px;border-right:0;border-bottom:1px solid var(--line)}
-  .brand{padding:0 4px;font-size:18px}.server,.group,.side .foot{display:none}
+  .top{padding:0 0 4px 4px}.brand{font-size:17px}.brand svg{width:22px;height:22px}.server,.group,.side .foot{display:none}
   .nav{display:flex;gap:2px;overflow-x:auto;min-width:0;scrollbar-width:none}.nav a{white-space:nowrap;padding:6px 10px}.nav .count{margin-left:4px}
   .page{padding:24px 16px 48px}h1{font-size:24px}
 }
@@ -81,7 +102,7 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 .copy{position:relative;display:flex;align-items:center;gap:8px;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 .copy code{flex:1;min-width:0;overflow-x:auto;white-space:nowrap;font-size:12.5px;scrollbar-width:thin}
 .copy code .k{color:#c2410c}.copy code .f{color:#a16207}.copy code .n{color:#be185d}
-@media (prefers-color-scheme:dark){.copy code .k{color:#fb923c}.copy code .f{color:#facc15}.copy code .n{color:#f472b6}}
+[data-theme=dark] .copy code .k{color:#fb923c}[data-theme=dark] .copy code .f{color:#facc15}[data-theme=dark] .copy code .n{color:#f472b6}
 .iconbtn{flex:none;border:0;background:none;cursor:pointer;color:var(--muted);padding:2px;display:grid;place-items:center;border-radius:5px}
 .iconbtn:hover{color:var(--fg);background:var(--hover)}
 .iconbtn svg{width:16px;height:16px}
@@ -193,11 +214,17 @@ pre{margin:6px 0 0;padding:12px;background:var(--soft);border-radius:8px;overflo
   <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></symbol>
+  <symbol id="i-system" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
 </svg>
 
 <div class="app">
   <aside class="side">
-    <div class="brand">tamsyam</div>
+    <div class="top">
+      <a class="brand" href="#/start"><svg aria-hidden="true" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#2563eb"/><path d="M12 24v-6a4 4 0 0 1 8 0v6z" fill="#fff" fill-opacity=".4"/><path d="M7 24v-8a9 9 0 0 1 18 0v8" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><path d="M5 24h22" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>tamsyam</a>
+      <button class="iconbtn theme" id="themebtn" onclick="cycleTheme()"><svg><use id="themeicon" href="#i-system"/></svg></button>
+    </div>
     <div class="server" title="Сервер"><span class="av" id="avatar">t</span><span id="srv">…</span></div>
     <nav class="nav">
       <div class="group">Сеть</div>
@@ -264,6 +291,21 @@ function route() {
   pages[page](true);
 }
 addEventListener('hashchange', route);
+
+const themes = {system: ['i-system', 'системная'], light: ['i-sun', 'светлая'], dark: ['i-moon', 'тёмная']};
+function showTheme() {
+  const [icon, name] = themes[theme.pref] || themes.system;
+  $('themeicon').setAttribute('href', '#' + icon);
+  $('themebtn').title = 'Тема: ' + name;
+  $('themebtn').setAttribute('aria-label', 'Тема: ' + name);
+}
+function cycleTheme() {
+  const order = Object.keys(themes);
+  theme.set(order[(order.indexOf(theme.pref) + 1) % order.length]);
+  showTheme();
+  toast('Тема: ' + themes[theme.pref][1]);
+}
+showTheme();
 
 /* ---------- start ---------- */
 let osTab = /Win/.test(navigator.platform) ? 'win' : 'unix';
