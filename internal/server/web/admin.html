@@ -5,35 +5,45 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>tamsyam admin</title>
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--muted:#6b7385;--line:#e3e6ec;--accent:#2f6fed;--ok:#1f9d55;--danger:#d64545;--code:#f0f2f5}
-@media (prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1c1f26;--fg:#e6e8ee;--muted:#8b93a6;--line:#2a2e38;--accent:#6b9bff;--ok:#3ccf7a;--danger:#ff6b6b;--code:#252933}}
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2330;--muted:#6b7385;--line:#e3e6ec;--grid:#eceef2;--accent:#2f6fed;--ok:#1f9d55;--danger:#d64545;--code:#f0f2f5;
+  --c-2xx:#0ca30c;--c-3xx:#2a78d6;--c-4xx:#fab219;--c-5xx:#d03b3b;--c-in:#2a78d6;--c-out:#eb6834}
+@media (prefers-color-scheme:dark){:root{--bg:#14161b;--card:#1c1f26;--fg:#e6e8ee;--muted:#8b93a6;--line:#2a2e38;--grid:#252933;--accent:#6b9bff;--ok:#3ccf7a;--danger:#ff6b6b;--code:#252933;
+  --c-3xx:#3987e5;--c-in:#3987e5;--c-out:#d95926}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
 header{display:flex;align-items:center;gap:12px;padding:14px 24px;border-bottom:1px solid var(--line);background:var(--card)}
 header h1{font-size:17px;margin:0}header .dom{color:var(--muted)}
 main{max-width:1100px;margin:0 auto;padding:24px 16px;display:grid;gap:20px}
-section{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-section>h2{font-size:14px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden;min-width:0}
+section>h2{font-size:14px;margin:0;padding:12px 16px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}
 .scroll{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:8px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
 th{font-weight:500;color:var(--muted);font-size:12px}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 tr:last-child td{border-bottom:0}
 tr.sel td{background:var(--code)}
 a{color:var(--accent);text-decoration:none}
 code{background:var(--code);padding:1px 6px;border-radius:4px;font-size:13px}
-button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;padding:4px 10px;cursor:pointer}
+button,select{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;padding:4px 10px;cursor:pointer}
 button:hover{border-color:var(--muted)}button.danger{color:var(--danger)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 input{font:inherit;padding:5px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
 .empty{padding:20px 16px;color:var(--muted)}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px}
-.muted{color:var(--muted)}.s2xx{color:var(--ok)}.s4xx{color:#d08a00}.s5xx{color:var(--danger)}
+.muted{color:var(--muted)}.s2xx{color:var(--ok)}.s4xx{color:#b97800}.s5xx{color:var(--danger)}
+@media (prefers-color-scheme:dark){.s4xx{color:#fab219}}
 form{display:flex;gap:8px}
 .secret{margin:12px 16px;padding:12px;border:1px solid var(--accent);border-radius:8px;display:grid;gap:6px}
 .secret code{word-break:break-all;white-space:normal}
+.tag{font-size:11px;padding:0 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted);margin-left:4px;vertical-align:1px}
+.proto{font-size:11px;font-weight:600;letter-spacing:.03em;margin:0 6px 0 0}
+.note{font-size:12px;color:var(--muted)}
+
+/* inspector */
 .insp{display:grid;grid-template-columns:minmax(0,1fr)}
-@media (min-width:900px){.insp{grid-template-columns:minmax(0,1fr) minmax(0,1.25fr)}.insp>#detail{border-left:1px solid var(--line)}}
+@media (min-width:900px){.insp.http{grid-template-columns:minmax(0,1fr) minmax(0,1.25fr)}.insp.http>#detail{border-left:1px solid var(--line)}}
 .insp>.list{max-height:640px;overflow:auto}
+.insp.tcp>#detail{display:none}
 #requests th,#requests td{padding:8px 10px}#requests th:first-child,#requests td:first-child{padding-left:16px}
 #requests tr[data-id]{cursor:pointer}#requests tr[data-id]:hover td{background:var(--code)}
 #detail{padding:16px;min-width:0;max-height:640px;overflow:auto}
@@ -45,8 +55,34 @@ table.kv td{padding:3px 8px 3px 0;border:0;white-space:normal;vertical-align:top
 table.kv td:first-child{color:var(--muted);white-space:nowrap}
 table.kv td:last-child{word-break:break-all;font-family:ui-monospace,Consolas,monospace}
 pre{margin:6px 0 0;padding:10px;background:var(--code);border-radius:6px;overflow:auto;max-height:360px;font-size:12.5px;white-space:pre-wrap;word-break:break-all}
-.note{font-size:12px;color:var(--muted)}
-.tag{font-size:11px;padding:0 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted);margin-left:4px}
+
+/* statistics */
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{border:0;border-radius:0;padding:4px 10px}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--code);font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.tile{background:var(--card);padding:12px 16px}
+.tile .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.3}
+.tile .l{font-size:12px;color:var(--muted)}
+.charts{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+@media (min-width:900px){.charts{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.charts>.chart+.chart{border-left:1px solid var(--line)}}
+.chart{padding:14px 16px 10px;position:relative;min-width:0;border-bottom:1px solid var(--line)}
+.chart h3{font-size:13px;margin:0 0 6px;font-weight:600}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);margin-bottom:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.chart svg{display:block;width:100%;height:180px;overflow:visible}
+.chart svg text{fill:var(--muted);font-size:11px}
+.chart .gridline{stroke:var(--grid)}
+.tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12px;box-shadow:0 4px 16px rgba(0,0,0,.12);white-space:nowrap;z-index:2}
+.tip b{display:block;margin-bottom:2px}
+.tip i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+.tops{display:grid;grid-template-columns:minmax(0,1fr)}
+@media (min-width:900px){.tops{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.tops>div+div{border-left:1px solid var(--line)}}
+.tops h3{font-size:13px;margin:0;padding:12px 16px 4px;font-weight:600}
+.tops td:first-child{max-width:380px;overflow:hidden;text-overflow:ellipsis}
+.bar{height:4px;border-radius:2px;background:var(--c-in);opacity:.35;margin-top:3px}
 </style>
 </head>
 <body>
@@ -56,13 +92,35 @@ pre{margin:6px 0 0;padding:10px;background:var(--code);border-radius:6px;overflo
     <h2><span>Активные туннели</span><span class="muted" id="tcount"></span></h2>
     <div class="scroll"><table id="tunnels"></table></div>
   </section>
+
   <section id="reqsec" hidden>
-    <h2><span>Запросы · <span id="reqsub"></span></span><button onclick="selectTunnel(null)">Закрыть</button></h2>
-    <div class="insp">
+    <h2><span id="insptitle"></span><button onclick="selectTunnel(null)">Закрыть</button></h2>
+    <div class="insp http" id="insp">
       <div class="list"><table id="requests"></table></div>
       <div id="detail"></div>
     </div>
   </section>
+
+  <section>
+    <h2><span>Статистика</span>
+      <span class="controls">
+        <span class="seg" id="ranges">
+          <button data-r="1h">1 ч</button><button data-r="24h">24 ч</button><button data-r="7d">7 дн</button><button data-r="30d">30 дн</button>
+        </span>
+        <select id="stunnel" aria-label="Туннель"><option value="">Все туннели</option></select>
+      </span>
+    </h2>
+    <div class="tiles" id="tiles"></div>
+    <div class="charts">
+      <div class="chart" id="chReq"></div>
+      <div class="chart" id="chTraffic"></div>
+    </div>
+    <div class="tops">
+      <div><h3>Популярные пути</h3><table id="topPaths"></table></div>
+      <div><h3>Клиенты (IP)</h3><table id="topIPs"></table></div>
+    </div>
+  </section>
+
   <section>
     <h2><span>Токены</span>
       <form onsubmit="createToken(event)"><input id="tname" placeholder="имя, напр. laptop" required><button class="primary">Создать</button></form>
@@ -70,51 +128,86 @@ pre{margin:6px 0 0;padding:10px;background:var(--code);border-radius:6px;overflo
     <div id="secret"></div>
     <div class="scroll"><table id="tokens"></table></div>
   </section>
+
+  <section id="ressec" hidden>
+    <h2><span>Закреплённые TCP-порты</span><span class="muted" id="tcprange"></span></h2>
+    <div class="scroll"><table id="reservations"></table></div>
+  </section>
 </main>
 <script>
-let info = {}, selected = null;
+let info = {}, selected = null, selectedProto = 'http';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ago = t => { if (!t) return '—'; const s = Math.round((Date.now() - new Date(t)) / 1000);
   return s < 60 ? s + ' с' : s < 3600 ? Math.round(s/60) + ' мин' : s < 86400 ? Math.round(s/3600) + ' ч' : Math.round(s/86400) + ' д'; };
+const fmtNum = n => Number(n || 0).toLocaleString('ru-RU');
+const fmtBytes = n => { n = n || 0; if (n < 1024) return n + ' Б';
+  const u = ['КБ','МБ','ГБ','ТБ']; let i = -1; do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+  return (n < 10 ? n.toFixed(1) : Math.round(n)) + ' ' + u[i]; };
+const fmtMs = ms => ms < 1000 ? Math.round(ms) + ' мс' : (ms / 1000).toFixed(1) + ' с';
 async function api(method, path, body) {
   // location.origin drops user:pass@ from the page URL, which fetch would reject.
   const r = await fetch(location.origin + path, {method, headers: body ? {'Content-Type':'application/json'} : {}, body: body && JSON.stringify(body)});
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
   return r.status === 204 ? null : r.json();
 }
+const enc = encodeURIComponent;
+
+/* ---------- tunnels ---------- */
 async function loadTunnels() {
   const list = await api('GET', '/api/tunnels');
   $('tcount').textContent = list.length;
-  $('tunnels').innerHTML = list.length ? `<tr><th>Адрес</th><th>Цель</th><th>Токен</th><th>Клиент</th><th>Подключён</th><th>Запросов</th><th></th></tr>` +
-    list.map(t => `<tr class="${t.subdomain === selected ? 'sel' : ''}">
-      <td><span class="dot"></span><a href="${esc(t.url)}" target="_blank">${esc(t.url.replace(/^https?:\/\//, ''))}</a></td>
-      <td><code>${esc(t.target)}</code></td><td>${esc(t.token_name)}</td>
-      <td class="muted">${esc(t.client_addr)} · v${esc(t.client_version)}</td>
-      <td class="muted">${ago(t.connected_at)}</td><td>${t.requests}</td>
-      <td><button onclick="selectTunnel('${esc(t.subdomain)}')">Запросы</button>
-          <button class="danger" onclick="kick('${esc(t.subdomain)}')">Отключить</button></td></tr>`).join('')
+  $('tunnels').innerHTML = list.length ? `<tr><th>Адрес</th><th>Цель</th><th>Токен</th><th>Подключён</th><th>Нагрузка</th><th class="num">Трафик вх / исх</th><th></th></tr>` +
+    list.map(t => {
+      const s = t.stats, tcp = t.proto === 'tcp';
+      const addr = tcp ? `<code>${esc(t.url.replace(/^tcp:\/\//, ''))}</code>`
+                       : `<a href="${esc(t.url)}" target="_blank">${esc(t.url.replace(/^https?:\/\//, ''))}</a>`;
+      const allow = t.allow && t.allow.length ? `<span class="tag" title="Разрешено: ${esc(t.allow.join(', '))}">IP-фильтр</span>` : '';
+      const load = tcp ? `${s.active_conns} активн. · ${fmtNum(s.total_conns)} всего`
+        : `${s.rpm} rpm · p50 ${fmtMs(s.p50_ms)} · p90 ${fmtMs(s.p90_ms)}` +
+          (s.s4xx || s.s5xx ? ` · <span class="s4xx">${s.s4xx}</span>/<span class="s5xx">${s.s5xx}</span> ошибок` : '');
+      return `<tr class="${t.key === selected ? 'sel' : ''}">
+        <td><span class="dot"></span><span class="proto muted">${tcp ? 'TCP' : 'HTTP'}</span>${addr}${allow}</td>
+        <td><code>${esc(t.target)}</code></td>
+        <td title="Клиент ${esc(t.client_addr)} · ts v${esc(t.client_version)}">${esc(t.token_name)}</td>
+        <td class="muted">${ago(t.connected_at)}</td><td>${load}</td>
+        <td class="num">${fmtBytes(s.bytes_in)} / ${fmtBytes(s.bytes_out)}</td>
+        <td><button onclick="selectTunnel('${esc(t.key)}','${t.proto}')">${tcp ? 'Соединения' : 'Запросы'}</button>
+            <button class="danger" onclick="kick('${esc(t.key)}')">Отключить</button></td></tr>`;
+    }).join('')
     : `<tr><td class="empty">Нет подключённых клиентов</td></tr>`;
 }
+
+/* ---------- inspector ---------- */
 async function loadRequests() {
   if (!selected) return;
+  if (selectedProto === 'tcp') return loadConnections();
   let reqs;
-  try { reqs = await api('GET', `/api/tunnels/${selected}/requests`); }
+  try { reqs = await api('GET', `/api/tunnels/${enc(selected)}/requests`); }
   catch { $('requests').innerHTML = `<tr><td class="empty">Туннель отключён</td></tr>`; return; }
-  $('requests').innerHTML = reqs.length ? `<tr><th>Метод</th><th>Путь</th><th>Статус</th><th>мс</th></tr>` +
+  $('requests').innerHTML = reqs.length ? `<tr><th>Метод</th><th>Путь</th><th>Статус</th><th class="num">мс</th></tr>` +
     reqs.map(r => `<tr data-id="${r.id}" class="${r.id === selectedReq ? 'sel' : ''}" onclick="showRequest(${r.id})" title="${new Date(r.time).toLocaleTimeString()}">
       <td>${esc(r.method)}</td>
       <td><code>${esc(r.path.length > 40 ? r.path.slice(0, 40) + '…' : r.path)}</code>${r.replay ? '<span class="tag">replay</span>' : ''}${r.upgrade ? '<span class="tag">ws</span>' : ''}</td>
-      <td class="s${String(r.status)[0]}xx">${r.status}</td><td class="muted">${r.duration_ms}</td></tr>`).join('')
+      <td class="s${String(r.status)[0]}xx">${r.status}</td><td class="num muted">${r.duration_ms}</td></tr>`).join('')
     : `<tr><td class="empty">Запросов пока не было</td></tr>`;
+}
+async function loadConnections() {
+  let conns;
+  try { conns = await api('GET', `/api/tunnels/${enc(selected)}/connections`); }
+  catch { $('requests').innerHTML = `<tr><td class="empty">Туннель отключён</td></tr>`; return; }
+  $('requests').innerHTML = conns.length ? `<tr><th>Время</th><th>IP</th><th class="num">Длительность</th><th class="num">Вх</th><th class="num">Исх</th><th></th></tr>` +
+    conns.map(c => `<tr><td class="muted">${new Date(c.time).toLocaleTimeString()}</td><td>${esc(c.remote_ip)}</td>
+      <td class="num">${fmtMs(c.duration_ms)}</td><td class="num">${fmtBytes(c.bytes_in)}</td><td class="num">${fmtBytes(c.bytes_out)}</td>
+      <td>${c.denied ? '<span class="s5xx">отклонено IP-фильтром</span>' : c.error ? `<span class="s5xx">${esc(c.error)}</span>` : ''}</td></tr>`).join('')
+    : `<tr><td class="empty">Соединений пока не было. Активные соединения появятся здесь после закрытия.</td></tr>`;
 }
 let selectedReq = null, currentReq = null;
 const kv = h => { const keys = Object.keys(h || {}).sort();
   return keys.length ? `<table class="kv">${keys.map(k => h[k].map(v => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')).join('')}</table>` : '<div class="note">нет</div>'; };
-const fmtSize = n => n < 1024 ? n + ' Б' : (n / 1024).toFixed(1) + ' КБ';
 function bodyView(b) {
   if (!b || !b.size) return '<div class="note">пусто</div>';
-  const notes = [fmtSize(b.size)];
+  const notes = [fmtBytes(b.size)];
   if (b.truncated) notes.push('показаны первые 32 КБ');
   if (b.decoded) notes.push('распаковано из ' + b.decoded);
   if (b.encoding === 'base64') return `<div class="note">${notes.join(' · ')} · бинарные данные</div>`;
@@ -126,7 +219,7 @@ async function showRequest(id) {
   selectedReq = id;
   document.querySelectorAll('#requests tr[data-id]').forEach(tr => tr.classList.toggle('sel', +tr.dataset.id === id));
   let d;
-  try { d = await api('GET', `/api/tunnels/${selected}/requests/${id}`); }
+  try { d = await api('GET', `/api/tunnels/${enc(selected)}/requests/${id}`); }
   catch (e) { $('detail').innerHTML = `<div class="note">${esc(e.message)}</div>`; return; }
   currentReq = d;
   const canReplay = !d.upgrade && !(d.request_body && d.request_body.truncated);
@@ -142,7 +235,7 @@ async function showRequest(id) {
     <h3>Ответ · тело</h3>${bodyView(d.response_body)}`;
 }
 async function replay(id) {
-  try { const r = await api('POST', `/api/tunnels/${selected}/requests/${id}/replay`); await loadRequests(); showRequest(r.id); }
+  try { const r = await api('POST', `/api/tunnels/${enc(selected)}/requests/${id}/replay`); await loadRequests(); showRequest(r.id); }
   catch (e) { alert('Не удалось повторить: ' + e.message); }
 }
 function copyCurl(btn) {
@@ -154,6 +247,133 @@ function copyCurl(btn) {
   if (d.request_body && d.request_body.size && d.request_body.encoding === 'text') parts.push(`--data-raw ${q(d.request_body.data)}`);
   navigator.clipboard.writeText(parts.join(' \\\n  ')).then(() => { btn.textContent = 'Скопировано'; setTimeout(() => btn.textContent = 'Копировать curl', 1500); });
 }
+function selectTunnel(key, proto) {
+  selected = key; selectedProto = proto || 'http'; selectedReq = currentReq = null; $('detail').innerHTML = '';
+  $('reqsec').hidden = !key;
+  $('insp').className = 'insp ' + selectedProto;
+  $('insptitle').textContent = key ? (selectedProto === 'tcp' ? 'Соединения · ' : 'Запросы · ') + key : '';
+  refresh();
+}
+async function kick(key) { if (confirm(`Отключить ${key}?`)) { await api('DELETE', `/api/tunnels/${enc(key)}`); refresh(); } }
+
+/* ---------- statistics ---------- */
+let statsRange = '24h', statsTunnel = '';
+try { statsRange = localStorage.getItem('tsm.range') || statsRange; } catch {}
+const RANGE_LABEL = {'1h': 'за час', '24h': 'за 24 часа', '7d': 'за 7 дней', '30d': 'за 30 дней'};
+
+async function loadStats() {
+  document.querySelectorAll('#ranges button').forEach(b => b.classList.toggle('on', b.dataset.r === statsRange));
+  let rep;
+  try { rep = await api('GET', `/api/stats?range=${statsRange}&tunnel=${enc(statsTunnel)}`); }
+  catch (e) { $('tiles').innerHTML = `<div class="tile empty">${esc(e.message)}</div>`; return; }
+
+  const sel = $('stunnel'), keys = new Set(rep.tunnels);
+  if (statsTunnel) keys.add(statsTunnel);
+  sel.innerHTML = `<option value="">Все туннели</option>` + [...keys].sort().map(k => `<option ${k === statsTunnel ? 'selected' : ''}>${esc(k)}</option>`).join('');
+
+  const t = rep.totals, errs = t.s4xx + t.s5xx;
+  const tile = (v, l) => `<div class="tile"><div class="v">${v}</div><div class="l">${l}</div></div>`;
+  $('tiles').innerHTML =
+    tile(fmtNum(t.requests), 'HTTP-запросов ' + RANGE_LABEL[rep.range]) +
+    tile(t.requests ? (errs / t.requests * 100).toFixed(1) + '%' : '—', `ошибок · 4xx ${fmtNum(t.s4xx)} · 5xx ${fmtNum(t.s5xx)}`) +
+    tile(t.requests ? fmtMs(t.dur_ms / t.requests) : '—', 'среднее время ответа') +
+    tile(fmtNum(t.conns), 'TCP-соединений') +
+    tile(fmtBytes(t.bytes_in + t.bytes_out), `трафик · вх ${fmtBytes(t.bytes_in)} · исх ${fmtBytes(t.bytes_out)}`) +
+    tile(fmtNum(rep.unique_ips), 'уникальных IP');
+
+  const buckets = fillBuckets(rep);
+  stackedBars($('chReq'), 'Запросы по статусам', buckets, [
+    {key: 's2xx', label: '2xx', color: 'var(--c-2xx)'}, {key: 's3xx', label: '3xx', color: 'var(--c-3xx)'},
+    {key: 's4xx', label: '4xx', color: 'var(--c-4xx)'}, {key: 's5xx', label: '5xx', color: 'var(--c-5xx)'}], fmtNum, rep);
+  lines($('chTraffic'), 'Трафик', buckets, [
+    {key: 'bytes_in', label: 'входящий', color: 'var(--c-in)'}, {key: 'bytes_out', label: 'исходящий', color: 'var(--c-out)'}], fmtBytes, rep);
+
+  const top = (rows, el, fmtV) => {
+    const max = rows.length ? rows[0].hits : 1;
+    $(el).innerHTML = rows.length ? rows.map(r => `<tr><td title="${esc(r.value)}"><code>${esc(fmtV(r.value))}</code><div class="bar" style="width:${Math.max(2, r.hits / max * 100)}%"></div></td><td class="num">${fmtNum(r.hits)}</td></tr>`).join('')
+      : `<tr><td class="empty">Нет данных</td></tr>`;
+  };
+  top(rep.top_paths, 'topPaths', v => v);
+  top(rep.top_ips, 'topIPs', v => v);
+}
+
+// fillBuckets returns one entry per bucket from rep.from to now, zero-filled.
+function fillBuckets(rep) {
+  const step = rep.bucket_minutes * 60000, start = new Date(rep.from).getTime();
+  const byTime = new Map(rep.points.map(p => [new Date(p.t).getTime(), p]));
+  const out = [];
+  for (let t = start; t <= Date.now(); t += step) out.push(Object.assign({t, requests: 0, s2xx: 0, s3xx: 0, s4xx: 0, s5xx: 0, conns: 0, bytes_in: 0, bytes_out: 0, dur_ms: 0}, byTime.get(t) || {}, {t}));
+  return out;
+}
+const niceMax = v => { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; };
+const fmtTick = (t, rep) => { const d = new Date(t);
+  return rep.bucket_minutes >= 180 ? d.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'}) : d.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}); };
+const fmtBucket = (t, rep) => { const a = new Date(t), b = new Date(t + rep.bucket_minutes * 60000);
+  const o = {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'};
+  return a.toLocaleString('ru-RU', o) + ' – ' + b.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}); };
+
+// chartFrame draws the title, legend, grid and axes and wires the hover layer.
+function chartFrame(el, title, buckets, series, maxV, fmtV, rep, drawMarks) {
+  const W = Math.max(280, el.clientWidth - 32), H = 180, L = 52, R = 6, T = 8, B = 22;
+  const iw = W - L - R, ih = H - T - B, n = buckets.length, slot = iw / Math.max(1, n);
+  const top = niceMax(maxV), y = v => T + ih - v / top * ih, x = i => L + i * slot;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">`;
+  for (let k = 0; k <= 2; k++) { const v = top * k / 2, yy = y(v);
+    svg += `<line class="gridline" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text x="${L - 6}" y="${yy + 4}" text-anchor="end">${esc(fmtV(v))}</text>`; }
+  const ticks = Math.min(5, n);
+  for (let k = 0; k < ticks; k++) { const i = Math.round(k * (n - 1) / Math.max(1, ticks - 1));
+    svg += `<text x="${x(i) + slot / 2}" y="${H - 4}" text-anchor="${k === 0 ? 'start' : k === ticks - 1 ? 'end' : 'middle'}">${esc(fmtTick(buckets[i].t, rep))}</text>`; }
+  svg += drawMarks({x, y, slot, ih, T}) + `<line class="cross" x1="0" x2="0" y1="${T}" y2="${T + ih}" stroke="var(--muted)" stroke-dasharray="3 3" visibility="hidden"/>`;
+  svg += `<rect class="hit" x="${L}" y="${T}" width="${iw}" height="${ih}" fill="transparent"/></svg>`;
+  el.innerHTML = `<h3>${esc(title)}</h3><div class="legend">${series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.label)}</span>`).join('')}</div>${svg}<div class="tip" hidden></div>`;
+
+  const svgEl = el.querySelector('svg'), tip = el.querySelector('.tip'), cross = el.querySelector('.cross');
+  const hide = () => { tip.hidden = true; cross.setAttribute('visibility', 'hidden'); };
+  el.querySelector('.hit').addEventListener('mousemove', ev => {
+    const box = svgEl.getBoundingClientRect(), px = (ev.clientX - box.left) * W / box.width;
+    const i = Math.min(n - 1, Math.max(0, Math.floor((px - L) / slot))), b = buckets[i], cx = x(i) + slot / 2;
+    cross.setAttribute('x1', cx); cross.setAttribute('x2', cx); cross.setAttribute('visibility', 'visible');
+    tip.innerHTML = `<b>${esc(fmtBucket(b.t, rep))}</b>` + series.map(s => `<div><i style="background:${s.color}"></i>${esc(s.label)}: ${esc(fmtV(b[s.key]))}</div>`).join('');
+    tip.hidden = false;
+    const left = (cx * box.width / W) + 16 + (box.left - el.getBoundingClientRect().left);
+    tip.style.left = Math.min(left, el.clientWidth - tip.offsetWidth - 8) + 'px';
+    tip.style.top = (ev.clientY - el.getBoundingClientRect().top - tip.offsetHeight - 10) + 'px';
+  });
+  el.querySelector('.hit').addEventListener('mouseleave', hide);
+}
+
+function stackedBars(el, title, buckets, series, fmtV, rep) {
+  const maxV = Math.max(0, ...buckets.map(b => series.reduce((a, s) => a + b[s.key], 0)));
+  chartFrame(el, title, buckets, series, maxV, fmtV, rep, ({x, y, slot}) => {
+    const bw = Math.max(1, Math.min(18, slot * 0.7)), off = (slot - bw) / 2;
+    let out = '';
+    buckets.forEach((b, i) => {
+      let acc = 0;
+      series.forEach(s => {
+        const v = b[s.key]; if (!v) return;
+        const y1 = y(acc), y2 = y(acc + v), h = Math.max(1, y1 - y2 - (acc ? 2 : 0));
+        out += `<rect x="${x(i) + off}" y="${y2}" width="${bw}" height="${h}" rx="${bw > 6 ? 2 : 0}" fill="${s.color}"/>`;
+        acc += v;
+      });
+    });
+    return out;
+  });
+}
+
+function lines(el, title, buckets, series, fmtV, rep) {
+  const maxV = Math.max(0, ...buckets.flatMap(b => series.map(s => b[s.key])));
+  chartFrame(el, title, buckets, series, maxV, fmtV, rep, ({x, y, slot}) =>
+    series.map(s => `<polyline fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"
+      points="${buckets.map((b, i) => `${(x(i) + slot / 2).toFixed(1)},${y(b[s.key]).toFixed(1)}`).join(' ')}"/>`).join(''));
+}
+
+document.querySelectorAll('#ranges button').forEach(b => b.addEventListener('click', () => {
+  statsRange = b.dataset.r; try { localStorage.setItem('tsm.range', statsRange); } catch {} loadStats();
+}));
+$('stunnel').addEventListener('change', e => { statsTunnel = e.target.value; loadStats(); });
+let resizeTimer; addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(loadStats, 200); });
+
+/* ---------- tokens & ports ---------- */
 async function loadTokens() {
   const list = await api('GET', '/api/tokens');
   $('tokens').innerHTML = list.length ? `<tr><th>Имя</th><th>Префикс</th><th>Создан</th><th>Использован</th><th></th></tr>` +
@@ -162,11 +382,15 @@ async function loadTokens() {
       <td>${t.revoked ? '<span class="muted">отозван</span>' : `<button class="danger" onclick="revoke(${t.id})">Отозвать</button>`}</td></tr>`).join('')
     : `<tr><td class="empty">Создайте токен, чтобы подключить клиента</td></tr>`;
 }
-function selectTunnel(sub) {
-  selected = sub; selectedReq = currentReq = null; $('detail').innerHTML = '';
-  $('reqsec').hidden = !sub; $('reqsub').textContent = sub || ''; refresh();
+async function loadReservations() {
+  if (!info.tcp_ports) return;
+  const list = await api('GET', '/api/reservations');
+  $('reservations').innerHTML = list.length ? `<tr><th>Порт</th><th>Токен</th><th>Закреплён</th><th></th></tr>` +
+    list.map(r => `<tr><td><code>${r.port}</code></td><td>${esc(r.token_name || '#' + r.token_id)}</td><td class="muted">${ago(r.created_at)} назад</td>
+      <td><button class="danger" onclick="releasePort(${r.port})">Освободить</button></td></tr>`).join('')
+    : `<tr><td class="empty">Порты закрепляются, когда клиент запускает <code>ts tcp &lt;порт&gt; -p &lt;публичный порт&gt;</code></td></tr>`;
 }
-async function kick(sub) { if (confirm(`Отключить ${sub}?`)) { await api('DELETE', `/api/tunnels/${sub}`); refresh(); } }
+async function releasePort(port) { if (confirm(`Освободить порт ${port}? Другой токен сможет его занять.`)) { await api('DELETE', `/api/reservations/${port}`); refresh(); } }
 async function revoke(id) { if (confirm('Отозвать токен? Его туннели будут отключены.')) { await api('DELETE', `/api/tokens/${id}`); refresh(); } }
 async function createToken(e) {
   e.preventDefault();
@@ -177,11 +401,17 @@ async function createToken(e) {
     <code>ts login ${esc(info.server)} ${esc(res.secret)}</code></div>`;
   loadTokens();
 }
+
 async function refresh() {
-  try { await Promise.all([loadTunnels(), loadRequests(), loadTokens()]); } catch (e) { console.error(e); }
+  try { await Promise.all([loadTunnels(), loadRequests(), loadTokens(), loadReservations()]); } catch (e) { console.error(e); }
 }
-api('GET', '/api/info').then(i => { info = i; $('dom').textContent = i.domain + ' · v' + i.version; });
+api('GET', '/api/info').then(i => {
+  info = i; $('dom').textContent = i.domain + ' · v' + i.version;
+  if (i.tcp_ports) { $('ressec').hidden = false; $('tcprange').textContent = 'диапазон ' + i.tcp_ports; }
+  refresh();
+});
 refresh(); setInterval(refresh, 3000);
+loadStats(); setInterval(loadStats, 30000);
 </script>
 </body>
 </html>

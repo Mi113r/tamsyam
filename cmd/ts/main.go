@@ -3,6 +3,7 @@
 //	ts login https://t.example.com tsm_xxx
 //	ts http 8080
 //	ts http 3000 -s myapp
+//	ts tcp 5432 -p 20017
 package main
 
 import (
@@ -14,7 +15,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Mi113r/tamsyam/internal/client"
@@ -30,8 +33,15 @@ const usage = `ts — expose a local service to the internet (tamsyam client)
 
 Usage:
   ts login <server-url> <token>   save server and token
-  ts http <port|host:port> [-s subdomain] [--server url] [--token t]
+  ts http <port|host:port> [-s subdomain] [--allow cidr,...] [-q]
+  ts tcp  <port|host:port> [-p public-port] [--allow cidr,...] [-q]
   ts version
+
+Flags for http/tcp:
+  -s, -p      fixed subdomain / public TCP port (a port is reserved for your token)
+  --allow     only these IPs/CIDRs may use the tunnel, e.g. 203.0.113.0/24,198.51.100.7
+  -q          do not print requests and connections
+  --server, --token   override the saved login
 `
 
 func main() {
@@ -43,8 +53,8 @@ func main() {
 	switch os.Args[1] {
 	case "login":
 		err = cmdLogin(os.Args[2:])
-	case "http":
-		err = cmdHTTP(os.Args[2:])
+	case "http", "tcp":
+		err = cmdTunnel(os.Args[1], os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("tamsyam", protocol.Version)
 	default:
@@ -80,9 +90,16 @@ func cmdLogin(args []string) error {
 	return nil
 }
 
-func cmdHTTP(args []string) error {
-	fs := flag.NewFlagSet("http", flag.ContinueOnError)
-	sub := fs.String("s", "", "requested subdomain")
+func cmdTunnel(proto string, args []string) error {
+	fs := flag.NewFlagSet(proto, flag.ContinueOnError)
+	var sub, port *string
+	if proto == "http" {
+		sub = fs.String("s", "", "requested subdomain")
+	} else {
+		port = fs.String("p", "", "public TCP port (reserved for your token)")
+	}
+	allow := fs.String("allow", "", "comma-separated IPs/CIDRs allowed to connect")
+	quiet := fs.Bool("q", false, "do not print requests and connections")
 	server := fs.String("server", "", "server URL (overrides saved config)")
 	token := fs.String("token", "", "access token (overrides saved config)")
 
@@ -91,7 +108,7 @@ func cmdHTTP(args []string) error {
 		return err
 	}
 	if fs.NArg() < 1 {
-		return errors.New("usage: ts http <port|host:port> [-s subdomain]")
+		return fmt.Errorf("usage: ts %s <port|host:port>", proto)
 	}
 	target := fs.Arg(0)
 	if err := fs.Parse(fs.Args()[1:]); err != nil {
@@ -115,19 +132,134 @@ func cmdHTTP(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	fmt.Printf("tamsyam %s · connecting to %s\n", protocol.Version, cfg.Server)
-	return client.Run(ctx, client.Options{
-		Server:    cfg.Server,
-		Token:     cfg.Token,
-		Subdomain: *sub,
-		Target:    target,
+	opts := client.Options{
+		Server: cfg.Server,
+		Token:  cfg.Token,
+		Proto:  proto,
+		Allow:  *allow,
+		Target: target,
 		OnConnect: func(url string) {
-			fmt.Printf("\n  Forwarding  %s  ->  http://%s\n\n  Ctrl+C to stop\n\n", url, target)
+			local := target
+			if proto == "http" {
+				local = "http://" + target
+			}
+			fmt.Printf("\n  Forwarding  %s  ->  %s\n", url, local)
+			if *allow != "" {
+				fmt.Printf("  Allowed     %s\n", *allow)
+			}
+			fmt.Printf("\n  Ctrl+C to stop\n\n")
 		},
 		OnDisconnect: func(err error, retry time.Duration) {
 			fmt.Printf("connection lost (%v), reconnecting in %s...\n", err, retry)
 		},
-	})
+	}
+	if sub != nil {
+		opts.Subdomain = *sub
+	}
+	if port != nil {
+		opts.Port = *port
+	}
+
+	var sum summary
+	opts.OnEvent = func(ev protocol.Event) {
+		sum.add(ev)
+		if !*quiet {
+			fmt.Println(formatEvent(ev))
+		}
+	}
+
+	fmt.Printf("tamsyam %s · connecting to %s\n", protocol.Version, cfg.Server)
+	err := client.Run(ctx, opts)
+	if s := sum.String(); s != "" {
+		fmt.Println("\n" + s)
+	}
+	return err
+}
+
+func formatEvent(ev protocol.Event) string {
+	at := ev.Time.Local().Format("15:04:05")
+	if ev.Type == "conn" {
+		line := fmt.Sprintf("%s  %-15s  %8s  in %-9s out %s", at, ev.RemoteIP,
+			formatDuration(ev.DurationMs), formatBytes(ev.BytesIn), formatBytes(ev.BytesOut))
+		if ev.Error != "" {
+			line += "  (" + ev.Error + ")"
+		}
+		return line
+	}
+	return fmt.Sprintf("%s  %-6s %3d  %8s  %s", at, ev.Method, ev.Status, formatDuration(ev.DurationMs), ev.Path)
+}
+
+// summary accumulates what the tunnel served, printed when the client exits.
+type summary struct {
+	mu                sync.Mutex
+	requests, s4, s5  int
+	conns             int
+	bytesIn, bytesOut int64
+	durs              []int64
+}
+
+func (s *summary) add(ev protocol.Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bytesIn += ev.BytesIn
+	s.bytesOut += ev.BytesOut
+	if ev.Type == "conn" {
+		s.conns++
+		return
+	}
+	s.requests++
+	switch ev.Status / 100 {
+	case 4:
+		s.s4++
+	case 5:
+		s.s5++
+	}
+	if len(s.durs) < 100_000 {
+		s.durs = append(s.durs, ev.DurationMs)
+	}
+}
+
+func (s *summary) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var parts []string
+	if s.requests > 0 {
+		d := slices.Clone(s.durs)
+		slices.Sort(d)
+		parts = append(parts, fmt.Sprintf("Requests: %d · 4xx: %d · 5xx: %d · p50 %s · p90 %s",
+			s.requests, s.s4, s.s5, formatDuration(d[len(d)*50/100]), formatDuration(d[min(len(d)*90/100, len(d)-1)])))
+	}
+	if s.conns > 0 {
+		parts = append(parts, fmt.Sprintf("Connections: %d", s.conns))
+	}
+	if s.requests > 0 || s.conns > 0 {
+		parts = append(parts, fmt.Sprintf("Traffic: in %s · out %s", formatBytes(s.bytesIn), formatBytes(s.bytesOut)))
+	}
+	return strings.Join(parts, "\n")
+}
+
+func formatDuration(ms int64) string {
+	switch {
+	case ms < 1000:
+		return fmt.Sprintf("%d ms", ms)
+	case ms < 60_000:
+		return fmt.Sprintf("%.1f s", float64(ms)/1000)
+	default:
+		return fmt.Sprintf("%dm%02ds", ms/60_000, ms/1000%60)
+	}
+}
+
+func formatBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for m := n / unit; m >= unit; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func configPath() (string, error) {

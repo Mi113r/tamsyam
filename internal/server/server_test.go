@@ -19,6 +19,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/Mi113r/tamsyam/internal/client"
+	"github.com/Mi113r/tamsyam/internal/protocol"
 	"github.com/Mi113r/tamsyam/internal/server"
 	"github.com/Mi113r/tamsyam/internal/store"
 )
@@ -29,11 +30,14 @@ const domain = "127.0.0.1"
 
 type env struct {
 	ts     *httptest.Server
+	srv    *server.Server
 	secret string
 	url    string
+	events chan protocol.Event
 }
 
-func setup(t *testing.T, backend http.Handler) *env {
+// newEnv starts a server with one token ("test") and no clients.
+func newEnv(t *testing.T, cfg server.Config) *env {
 	t.Helper()
 	st, err := store.Open(t.TempDir() + "/test.db")
 	if err != nil {
@@ -44,30 +48,53 @@ func setup(t *testing.T, backend http.Handler) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	srv := server.New(server.Config{Domain: domain, PublicScheme: "http", AdminPassword: "pw"},
-		st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cfg.Domain, cfg.PublicScheme, cfg.AdminPassword = domain, "http", "pw"
+	srv := server.New(cfg, st, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
+	return &env{ts: ts, srv: srv, secret: secret, events: make(chan protocol.Event, 100)}
+}
 
-	be := httptest.NewServer(backend)
-	t.Cleanup(be.Close)
-
+// connect runs a client with opts (Server and Token default to the env's) and
+// returns its public URL and a function that stops it.
+func (e *env) connect(t *testing.T, opts client.Options) (string, context.CancelFunc) {
+	t.Helper()
+	if opts.Server == "" {
+		opts.Server = e.ts.URL
+	}
+	if opts.Token == "" {
+		opts.Token = e.secret
+	}
+	connected := make(chan string, 1)
+	failed := make(chan error, 1)
+	opts.OnConnect = func(u string) { connected <- u }
+	opts.OnEvent = func(ev protocol.Event) { e.events <- ev }
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	connected := make(chan string, 1)
-	go client.Run(ctx, client.Options{
-		Server: ts.URL, Token: secret, Subdomain: "demo",
-		Target:    strings.TrimPrefix(be.URL, "http://"),
-		OnConnect: func(u string) { connected <- u },
-	})
+	go func() { failed <- client.Run(ctx, opts) }()
 	select {
 	case u := <-connected:
-		return &env{ts: ts, secret: secret, url: u}
+		return u, cancel
+	case err := <-failed:
+		t.Fatalf("client failed: %v", err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("client did not connect")
-		return nil
 	}
+	return "", cancel
+}
+
+func setup(t *testing.T, backend http.Handler, mods ...func(*client.Options)) *env {
+	t.Helper()
+	e := newEnv(t, server.Config{})
+	be := httptest.NewServer(backend)
+	t.Cleanup(be.Close)
+	opts := client.Options{Subdomain: "demo", Target: strings.TrimPrefix(be.URL, "http://")}
+	for _, m := range mods {
+		m(&opts)
+	}
+	e.url, _ = e.connect(t, opts)
+	return e
 }
 
 func (e *env) get(t *testing.T, host, path string) (int, string) {

@@ -28,22 +28,41 @@ type Config struct {
 	// PublicPort is appended to tunnel URLs when non-empty (local testing).
 	PublicPort    string
 	AdminPassword string
+
+	// TCPPortMin..TCPPortMax is the public port range for TCP tunnels; 0 disables them.
+	TCPPortMin, TCPPortMax int
+	// TCPHost is the host shown in tcp:// addresses (defaults to Domain).
+	TCPHost string
+	// TCPBind is the address TCP listeners bind to (defaults to all interfaces).
+	TCPBind string
 }
 
 type Server struct {
 	cfg      Config
 	store    *store.Store
 	registry *Registry
+	stats    *Collector
 	log      *slog.Logger
 	admin    http.Handler
 }
 
+// New creates the server and starts its statistics collector; call Close to
+// stop it and flush pending counters.
 func New(cfg Config, st *store.Store, log *slog.Logger) *Server {
 	cfg.Domain = strings.ToLower(strings.TrimSuffix(cfg.Domain, "."))
-	s := &Server{cfg: cfg, store: st, registry: NewRegistry(), log: log}
+	if cfg.TCPHost == "" {
+		cfg.TCPHost = cfg.Domain
+	}
+	s := &Server{cfg: cfg, store: st, registry: NewRegistry(), stats: newCollector(st, log), log: log}
 	s.admin = s.adminRoutes()
+	go s.stats.run()
 	return s
 }
+
+func (s *Server) Close() { s.stats.close() }
+
+// FlushStats writes in-memory statistics to the store.
+func (s *Server) FlushStats() error { return s.stats.Flush() }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := strings.ToLower(r.Host)
@@ -91,28 +110,62 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sub := strings.ToLower(r.Header.Get(protocol.HeaderSubdomain))
-	if sub == "" {
-		for sub = randomSubdomain(); s.registry.Get(sub) != nil; sub = randomSubdomain() {
-		}
-	} else if !validSubdomain(sub) {
-		http.Error(w, errSubdomainInvalid.Error(), http.StatusBadRequest)
-		return
-	} else if s.registry.Taken(sub, tok.ID) {
-		http.Error(w, errSubdomainTaken.Error(), http.StatusConflict)
+	allow, allowText, err := parseAllow(r.Header.Get(protocol.HeaderAllow))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
 	target := r.Header.Get(protocol.HeaderTarget)
 	if target == "" {
 		target = "localhost"
 	}
-	url := s.tunnelURL(sub)
+
+	var (
+		proto = strings.ToLower(r.Header.Get(protocol.HeaderProto))
+		key   string
+		sub   string
+		port  int
+		url   string
+		ln    net.Listener
+	)
+	switch proto {
+	case "", "http":
+		proto = "http"
+		sub = strings.ToLower(r.Header.Get(protocol.HeaderSubdomain))
+		if sub == "" {
+			for sub = randomSubdomain(); s.registry.Get(sub) != nil; sub = randomSubdomain() {
+			}
+		} else if !validSubdomain(sub) {
+			http.Error(w, errSubdomainInvalid.Error(), http.StatusBadRequest)
+			return
+		} else if s.registry.Taken(sub, tok.ID) {
+			http.Error(w, errSubdomainTaken.Error(), http.StatusConflict)
+			return
+		}
+		key, url = sub, s.tunnelURL(sub)
+	case "tcp":
+		ln, port, err = s.listenTCP(tok.ID, r.Header.Get(protocol.HeaderPort), r.Header.Get(protocol.HeaderReconnect) == "")
+		switch {
+		case errors.Is(err, errTCPDisabled), errors.Is(err, errPortRange):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		case err != nil:
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		key, url = tcpKey(port), fmt.Sprintf("tcp://%s:%d", s.cfg.TCPHost, port)
+	default:
+		http.Error(w, "unknown protocol "+proto, http.StatusBadRequest)
+		return
+	}
 	w.Header().Set(protocol.HeaderURL, url)
 
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionDisabled})
 	if err != nil {
 		s.log.Warn("websocket accept", "err", err)
+		if ln != nil {
+			ln.Close()
+		}
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -122,22 +175,35 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	sess, err := yamux.Client(conn, protocol.YamuxConfig())
 	if err != nil {
 		conn.Close()
+		if ln != nil {
+			ln.Close()
+		}
 		return
 	}
-	t := newTunnel(sess)
-	t.Subdomain, t.URL, t.Target = sub, url, target
+	t := newTunnel(sess, s.stats)
+	t.Key, t.Proto, t.Subdomain, t.Port, t.URL, t.Target = key, proto, sub, port, url, target
+	t.allow, t.Allow = allow, allowText
 	t.TokenID, t.TokenName = tok.ID, tok.Name
 	t.ClientAddr, t.ClientVer = clientIP(r), r.Header.Get(protocol.HeaderVersion)
+	t.listener = ln
+	if proto == "http" {
+		t.enableHTTP()
+	}
 
 	if err := s.registry.Add(t); err != nil {
-		sess.Close()
+		t.Close()
 		return
 	}
-	s.log.Info("tunnel up", "subdomain", sub, "token", tok.Name, "client", t.ClientAddr, "target", target)
+	if proto == "tcp" {
+		go t.serveTCP()
+	}
+	go t.runControl()
+	s.log.Info("tunnel up", "key", key, "token", tok.Name, "client", t.ClientAddr, "target", target)
 
 	<-sess.CloseChan()
+	t.Close()
 	s.registry.Remove(t)
-	s.log.Info("tunnel down", "subdomain", sub, "token", tok.Name)
+	s.log.Info("tunnel down", "key", key, "token", tok.Name)
 }
 
 func (s *Server) tunnelURL(sub string) string {

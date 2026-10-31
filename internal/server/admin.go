@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -27,10 +28,14 @@ func (s *Server) adminRoutes() http.Handler {
 	})
 	mux.HandleFunc("GET /api/info", s.apiInfo)
 	mux.HandleFunc("GET /api/tunnels", s.apiListTunnels)
-	mux.HandleFunc("DELETE /api/tunnels/{sub}", s.apiKickTunnel)
-	mux.HandleFunc("GET /api/tunnels/{sub}/requests", s.apiTunnelRequests)
-	mux.HandleFunc("GET /api/tunnels/{sub}/requests/{id}", s.apiRequestDetail)
-	mux.HandleFunc("POST /api/tunnels/{sub}/requests/{id}/replay", s.apiReplayRequest)
+	mux.HandleFunc("DELETE /api/tunnels/{key}", s.apiKickTunnel)
+	mux.HandleFunc("GET /api/tunnels/{key}/requests", s.apiTunnelRequests)
+	mux.HandleFunc("GET /api/tunnels/{key}/requests/{id}", s.apiRequestDetail)
+	mux.HandleFunc("POST /api/tunnels/{key}/requests/{id}/replay", s.apiReplayRequest)
+	mux.HandleFunc("GET /api/tunnels/{key}/connections", s.apiTunnelConnections)
+	mux.HandleFunc("GET /api/stats", s.apiStats)
+	mux.HandleFunc("GET /api/reservations", s.apiListReservations)
+	mux.HandleFunc("DELETE /api/reservations/{port}", s.apiReleasePort)
 	mux.HandleFunc("GET /api/tokens", s.apiListTokens)
 	mux.HandleFunc("POST /api/tokens", s.apiCreateToken)
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.apiRevokeToken)
@@ -55,10 +60,15 @@ func (s *Server) basicAuth(next http.Handler) http.Handler {
 }
 
 func (s *Server) apiInfo(w http.ResponseWriter, r *http.Request) {
+	tcp := ""
+	if s.cfg.TCPPortMin > 0 {
+		tcp = fmt.Sprintf("%d-%d", s.cfg.TCPPortMin, s.cfg.TCPPortMax)
+	}
 	writeJSON(w, http.StatusOK, map[string]string{
-		"domain":  s.cfg.Domain,
-		"server":  s.cfg.PublicScheme + "://" + r.Host,
-		"version": protocol.Version,
+		"domain":    s.cfg.Domain,
+		"server":    s.cfg.PublicScheme + "://" + r.Host,
+		"version":   protocol.Version,
+		"tcp_ports": tcp,
 	})
 }
 
@@ -69,7 +79,7 @@ func (s *Server) apiListTunnels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiKickTunnel(w http.ResponseWriter, r *http.Request) {
-	t := s.registry.Get(r.PathValue("sub"))
+	t := s.registry.Get(r.PathValue("key"))
 	if t == nil {
 		writeError(w, http.StatusNotFound, "tunnel not found")
 		return
@@ -79,7 +89,7 @@ func (s *Server) apiKickTunnel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) apiTunnelRequests(w http.ResponseWriter, r *http.Request) {
-	t := s.registry.Get(r.PathValue("sub"))
+	t := s.registry.Get(r.PathValue("key"))
 	if t == nil {
 		writeError(w, http.StatusNotFound, "tunnel not found")
 		return
@@ -121,7 +131,7 @@ func (s *Server) apiReplayRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) tunnelRequest(w http.ResponseWriter, r *http.Request) (*Tunnel, uint64, bool) {
-	t := s.registry.Get(r.PathValue("sub"))
+	t := s.registry.Get(r.PathValue("key"))
 	if t == nil {
 		writeError(w, http.StatusNotFound, "tunnel not found")
 		return nil, 0, false
@@ -175,7 +185,7 @@ func (s *Server) apiRevokeToken(w http.ResponseWriter, r *http.Request) {
 	// Revocation also drops the token's live tunnels.
 	for _, t := range s.registry.List() {
 		if t.TokenID == id {
-			if live := s.registry.Get(t.Subdomain); live != nil {
+			if live := s.registry.Get(t.Key); live != nil {
 				live.Close()
 			}
 		}
@@ -191,4 +201,47 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 func writeError(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]string{"error": msg})
+}
+
+func (s *Server) apiTunnelConnections(w http.ResponseWriter, r *http.Request) {
+	t := s.registry.Get(r.PathValue("key"))
+	if t == nil {
+		writeError(w, http.StatusNotFound, "tunnel not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, t.ConnLog())
+}
+
+func (s *Server) apiStats(w http.ResponseWriter, r *http.Request) {
+	rep, err := s.statsReport(r.URL.Query().Get("range"), r.URL.Query().Get("tunnel"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rep)
+}
+
+func (s *Server) apiListReservations(w http.ResponseWriter, r *http.Request) {
+	list, err := s.store.ListReservations()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *Server) apiReleasePort(w http.ResponseWriter, r *http.Request) {
+	port, err := strconv.Atoi(r.PathValue("port"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad port")
+		return
+	}
+	if err := s.store.ReleasePort(port); errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "port is not reserved")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
