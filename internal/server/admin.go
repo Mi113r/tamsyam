@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,7 +49,7 @@ func (s *Server) basicAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if len(s.cfg.PrivateNetworks) > 0 && ipTrusted(authClientIP(r), s.cfg.PrivateNetworks) {
+		if s.fromPrivateNetwork(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -65,44 +63,14 @@ func (s *Server) basicAuth(next http.Handler) http.Handler {
 	})
 }
 
-// authClientIP returns the address the admin request really came from, for the
-// trusted-network decision. Unlike clientIP (which trusts the proxy for
-// display), X-Forwarded-For is honored only when the direct peer is loopback —
-// i.e. the same-host fronting proxy; on direct connections it is ignored so a
-// caller cannot spoof a trusted private address.
-func authClientIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		host = r.RemoteAddr
-	}
-	if ip, err := netip.ParseAddr(host); err == nil && ip.IsLoopback() {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
-				return first
-			}
-		}
-	}
-	return host
-}
-
-func ipTrusted(ipStr string, nets []netip.Prefix) bool {
-	ip, err := netip.ParseAddr(ipStr)
-	if err != nil {
+// fromPrivateNetwork reports whether r comes from TAMSYAM_PRIVATE_NETWORKS.
+// Requests forwarded by an unknown proxy never qualify: their address is the
+// proxy's, and a proxy inside the LAN would otherwise open the panel to everyone.
+func (s *Server) fromPrivateNetwork(r *http.Request) bool {
+	if len(s.cfg.PrivateNetworks) == 0 || r.Context().Value(unknownProxyKey{}) != nil {
 		return false
 	}
-	ip = ip.Unmap()
-	for _, n := range nets {
-		if n.Contains(ip) {
-			return true
-		}
-		if ip.Is4() != n.Addr().Is4() {
-			// Same address in the other family (v4-mapped v6): compare unmapped.
-			if n.Addr().Is4In6() && n.Contains(netip.AddrFrom16(ip.As16())) {
-				return true
-			}
-		}
-	}
-	return false
+	return containsAddr(s.cfg.PrivateNetworks, peerAddr(r.RemoteAddr))
 }
 
 func (s *Server) apiInfo(w http.ResponseWriter, r *http.Request) {

@@ -247,13 +247,7 @@ func (t *Tunnel) allowed(ip string) bool {
 	if err != nil {
 		return false
 	}
-	addr = addr.Unmap()
-	for _, p := range t.allow {
-		if p.Contains(addr) {
-			return true
-		}
-	}
-	return false
+	return containsAddr(t.allow, addr.Unmap())
 }
 
 func (t *Tunnel) snapshot() TunnelInfo {

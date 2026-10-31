@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strconv"
@@ -43,13 +44,16 @@ func main() {
 		}
 		cfg.TCPPortMin, cfg.TCPPortMax = lo, hi
 	}
-	if nets := env("TAMSYAM_PRIVATE_NETWORKS", ""); nets != "" {
-		private, err := server.ParsePrivateNetworks(nets)
+	for name, dst := range map[string]*[]netip.Prefix{
+		"TAMSYAM_PRIVATE_NETWORKS": &cfg.PrivateNetworks,
+		"TAMSYAM_TRUSTED_PROXIES":  &cfg.TrustedProxies,
+	} {
+		nets, err := server.ParseNetworks(env(name, ""))
 		if err != nil {
-			log.Error("TAMSYAM_PRIVATE_NETWORKS: comma-separated CIDRs or IPs expected", "err", err)
+			log.Error(name+": comma-separated CIDRs or IPs expected", "err", err)
 			os.Exit(2)
 		}
-		cfg.PrivateNetworks = private
+		*dst = nets
 	}
 
 	st, err := store.Open(dbPath)

@@ -92,7 +92,10 @@ TAMSYAM_TCP_PORTS=<TCP_PORTS>
 TAMSYAM_TCP_HOST=<BASE_DOMAIN>
 # Опционально: сети (CIDR/IP, через запятую), где админка работает без пароля
 # (доверенная LAN). VPN-клиенты и все остальные вводят пароль как обычно.
-#TAMSYAM_PRIVATE_NETWORKS=10.1.1.0/24,127.0.0.1
+#TAMSYAM_PRIVATE_NETWORKS=10.1.1.0/24
+# Только если Caddy на ДРУГОМ хосте: его IP, иначе сервер видит все запросы от Caddy
+# (не работают --allow, IP в статистике и беспарольный вход из LAN).
+TAMSYAM_TRUSTED_PROXIES=<IP хоста Caddy>
 ```
 
 Запусти:

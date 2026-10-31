@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 
 	"github.com/coder/websocket"
 	"github.com/hashicorp/yamux"
@@ -41,28 +42,17 @@ type Config struct {
 	// panel without the password (trusted LAN). Everyone else — including VPN
 	// clients — still needs it; an empty list means password everywhere.
 	PrivateNetworks []netip.Prefix
+	// TrustedProxies are the fronting proxies (Caddy) whose X-Forwarded-For is
+	// believed. Loopback is always trusted; a proxy on another host must be listed,
+	// otherwise every request appears to come from the proxy itself.
+	TrustedProxies []netip.Prefix
 }
 
-// ParsePrivateNetworks parses a comma-separated list of CIDRs and plain IPs
-// (TAMSYAM_PRIVATE_NETWORKS). Plain IPs are treated as single-host prefixes.
-func ParsePrivateNetworks(list string) ([]netip.Prefix, error) {
-	var out []netip.Prefix
-	for _, part := range strings.Split(list, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		if addr, err := netip.ParseAddr(part); err == nil {
-			out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
-			continue
-		}
-		p, err := netip.ParsePrefix(part)
-		if err != nil {
-			return nil, fmt.Errorf("%q: %w", part, err)
-		}
-		out = append(out, p.Masked())
-	}
-	return out, nil
+// ParseNetworks parses a comma-separated list of CIDRs and plain IPs
+// (TAMSYAM_PRIVATE_NETWORKS, TAMSYAM_TRUSTED_PROXIES).
+func ParseNetworks(list string) ([]netip.Prefix, error) {
+	nets, _, err := parseAllow(list)
+	return nets, err
 }
 
 type Server struct {
@@ -72,6 +62,8 @@ type Server struct {
 	stats    *Collector
 	log      *slog.Logger
 	admin    http.Handler
+
+	warnProxy sync.Once
 }
 
 // New creates the server and starts its statistics collector; call Close to
@@ -93,6 +85,9 @@ func (s *Server) Close() { s.stats.close() }
 func (s *Server) FlushStats() error { return s.stats.Flush() }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.resolveClient(r) {
+		r = r.WithContext(context.WithValue(r.Context(), unknownProxyKey{}, true))
+	}
 	host := strings.ToLower(r.Host)
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
@@ -242,12 +237,64 @@ func (s *Server) tunnelURL(sub string) string {
 	return s.cfg.PublicScheme + "://" + host
 }
 
-// clientIP prefers the address reported by the fronting proxy.
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		first, _, _ := strings.Cut(xff, ",")
-		return strings.TrimSpace(first)
+type unknownProxyKey struct{}
+
+// resolveClient replaces r.RemoteAddr with the original client address.
+// X-Forwarded-For is honored only when the direct peer is a trusted proxy, and
+// it is read from the right: the first hop that is not a trusted proxy is the
+// client, so values a client prepends itself are never used. It reports
+// whether r carries X-Forwarded-For from an untrusted peer; the address then
+// stays the peer's, which may be a proxy rather than the client.
+func (s *Server) resolveClient(r *http.Request) (unknownProxy bool) {
+	xff := r.Header.Values("X-Forwarded-For")
+	if len(xff) == 0 {
+		return false
 	}
+	if peer := peerAddr(r.RemoteAddr); !s.trustedProxy(peer) {
+		s.warnProxy.Do(func() {
+			s.log.Warn("ignoring X-Forwarded-For from an untrusted peer; if it is your proxy, add it to TAMSYAM_TRUSTED_PROXIES", "peer", peer)
+		})
+		return true
+	}
+	hops := strings.Split(strings.Join(xff, ","), ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		ip, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+		if err != nil {
+			break
+		}
+		ip = ip.Unmap()
+		r.RemoteAddr = netip.AddrPortFrom(ip, 0).String()
+		if !s.trustedProxy(ip) {
+			break
+		}
+	}
+	return false
+}
+
+func (s *Server) trustedProxy(ip netip.Addr) bool {
+	return ip.IsLoopback() || containsAddr(s.cfg.TrustedProxies, ip)
+}
+
+func peerAddr(remoteAddr string) netip.Addr {
+	ap, err := netip.ParseAddrPort(remoteAddr)
+	if err != nil {
+		return netip.Addr{}
+	}
+	return ap.Addr().Unmap()
+}
+
+func containsAddr(nets []netip.Prefix, ip netip.Addr) bool {
+	for _, n := range nets {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// clientIP returns the client address; ServeHTTP has already resolved it
+// through trusted proxies.
+func clientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
