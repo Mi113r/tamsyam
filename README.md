@@ -68,6 +68,8 @@ GOOS=linux GOARCH=amd64 go build -o bin/tamsyam-server ./cmd/tamsyam-server
    ```
 4. Откройте `https://t.example.com` (пароль из `TAMSYAM_ADMIN_PASSWORD`) и создайте токен.
 
+Админке можно доверить домашнюю сеть: задайте `TAMSYAM_PRIVATE_NETWORKS` (список CIDR/IP через запятую) — оттуда панель открывается без пароля. Все остальные адреса, включая VPN-клиентов, вводят пароль как обычно. Список учитывается только при работе за same-host прокси (слушайте на loopback): напрямую X-Forwarded-For игнорируется, подделать доверенный IP нельзя.
+
 ## Использование
 
 ```bash

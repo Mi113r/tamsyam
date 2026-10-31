@@ -275,6 +275,53 @@ func TestAdminRequiresPassword(t *testing.T) {
 	}
 }
 
+func TestAdminTrustedNetworks(t *testing.T) {
+	private, err := server.ParsePrivateNetworks("10.1.1.0/24, 127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := newEnv(t, server.Config{PrivateNetworks: private})
+
+	// Loopback via a same-host proxy: X-Forwarded-For decides.
+	// LAN source — no password.
+	req, _ := http.NewRequest("GET", e.ts.URL+"/api/tunnels", nil)
+	req.Host = domain
+	req.Header.Set("X-Forwarded-For", "10.1.1.77")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("LAN without password: got %d", resp.StatusCode)
+	}
+
+	// VPN source — password still required.
+	req, _ = http.NewRequest("GET", e.ts.URL+"/api/tunnels", nil)
+	req.Host = domain
+	req.Header.Set("X-Forwarded-For", "10.8.0.5")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("VPN without password: got %d", resp.StatusCode)
+	}
+
+	// Direct connection from a public address: X-Forwarded-For must be ignored
+	// even if it claims a trusted network.
+	req, _ = http.NewRequest("GET", "/api/tunnels", nil)
+	req.Host = domain
+	req.Header.Set("X-Forwarded-For", "10.1.1.77")
+	req.RemoteAddr = "203.0.113.9:4444"
+	rec := httptest.NewRecorder()
+	e.srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("spoofed XFF from public addr: got %d", rec.Code)
+	}
+}
+
 func TestRejectsBadToken(t *testing.T) {
 	e := setup(t, http.NotFoundHandler())
 	err := client.Run(context.Background(), client.Options{

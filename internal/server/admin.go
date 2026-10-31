@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
 	"sort"
 	"strconv"
 	"strings"
@@ -49,6 +51,10 @@ func (s *Server) basicAuth(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if len(s.cfg.PrivateNetworks) > 0 && ipTrusted(authClientIP(r), s.cfg.PrivateNetworks) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		_, pass, ok := r.BasicAuth()
 		if !ok || subtle.ConstantTimeCompare([]byte(pass), []byte(s.cfg.AdminPassword)) != 1 {
 			w.Header().Set("WWW-Authenticate", `Basic realm="tamsyam admin"`)
@@ -57,6 +63,46 @@ func (s *Server) basicAuth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// authClientIP returns the address the admin request really came from, for the
+// trusted-network decision. Unlike clientIP (which trusts the proxy for
+// display), X-Forwarded-For is honored only when the direct peer is loopback —
+// i.e. the same-host fronting proxy; on direct connections it is ignored so a
+// caller cannot spoof a trusted private address.
+func authClientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip, err := netip.ParseAddr(host); err == nil && ip.IsLoopback() {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if first := strings.TrimSpace(strings.Split(xff, ",")[0]); first != "" {
+				return first
+			}
+		}
+	}
+	return host
+}
+
+func ipTrusted(ipStr string, nets []netip.Prefix) bool {
+	ip, err := netip.ParseAddr(ipStr)
+	if err != nil {
+		return false
+	}
+	ip = ip.Unmap()
+	for _, n := range nets {
+		if n.Contains(ip) {
+			return true
+		}
+		if ip.Is4() != n.Addr().Is4() {
+			// Same address in the other family (v4-mapped v6): compare unmapped.
+			if n.Addr().Is4In6() && n.Contains(netip.AddrFrom16(ip.As16())) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Server) apiInfo(w http.ResponseWriter, r *http.Request) {

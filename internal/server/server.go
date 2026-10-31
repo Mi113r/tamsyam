@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/coder/websocket"
@@ -35,6 +36,33 @@ type Config struct {
 	TCPHost string
 	// TCPBind is the address TCP listeners bind to (defaults to all interfaces).
 	TCPBind string
+
+	// PrivateNetworks are CIDRs (or plain IPs) whose clients may use the admin
+	// panel without the password (trusted LAN). Everyone else — including VPN
+	// clients — still needs it; an empty list means password everywhere.
+	PrivateNetworks []netip.Prefix
+}
+
+// ParsePrivateNetworks parses a comma-separated list of CIDRs and plain IPs
+// (TAMSYAM_PRIVATE_NETWORKS). Plain IPs are treated as single-host prefixes.
+func ParsePrivateNetworks(list string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, part := range strings.Split(list, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if addr, err := netip.ParseAddr(part); err == nil {
+			out = append(out, netip.PrefixFrom(addr, addr.BitLen()))
+			continue
+		}
+		p, err := netip.ParsePrefix(part)
+		if err != nil {
+			return nil, fmt.Errorf("%q: %w", part, err)
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
 }
 
 type Server struct {

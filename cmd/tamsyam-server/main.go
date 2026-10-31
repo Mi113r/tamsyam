@@ -43,6 +43,14 @@ func main() {
 		}
 		cfg.TCPPortMin, cfg.TCPPortMax = lo, hi
 	}
+	if nets := env("TAMSYAM_PRIVATE_NETWORKS", ""); nets != "" {
+		private, err := server.ParsePrivateNetworks(nets)
+		if err != nil {
+			log.Error("TAMSYAM_PRIVATE_NETWORKS: comma-separated CIDRs or IPs expected", "err", err)
+			os.Exit(2)
+		}
+		cfg.PrivateNetworks = private
+	}
 
 	st, err := store.Open(dbPath)
 	if err != nil {
