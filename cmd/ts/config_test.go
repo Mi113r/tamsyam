@@ -71,7 +71,7 @@ tunnels:
 
 func TestLoadFileConfigErrors(t *testing.T) {
 	for body, want := range map[string]string{
-		"tunnels: {}\n":                          "no tunnels",
+		"tunnels: {}\n": "no tunnels",
 		"tunnels:\n  a: {addr: 1, protoo: tcp}\n": "protoo",
 		"tunnels:\n  a: {addr: 1, proto: udp}\n":  "proto must be",
 	} {
