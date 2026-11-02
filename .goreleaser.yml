@@ -47,3 +47,32 @@ changelog:
   sort: asc
   filters:
     exclude: ["^docs:", "^test:", "^ci:"]
+
+# brew install --cask mi113r/tap/tamsyam
+# Needs the Mi113r/homebrew-tap repo and a HOMEBREW_TAP_TOKEN secret (a token with
+# contents write access to that repo); without the secret the cask is not published.
+homebrew_casks:
+  - name: tamsyam
+    ids: [client]
+    binaries: [ts]
+    homepage: https://github.com/Mi113r/tamsyam
+    description: Self-hosted tunnels to your own domain (ts http 8080)
+    license: MIT
+    repository:
+      owner: Mi113r
+      name: homebrew-tap
+      token: '{{ index .Env "HOMEBREW_TAP_TOKEN" }}'
+    commit_author:
+      name: tamsyam-release
+      email: 6532552+Mi113r@users.noreply.github.com
+    skip_upload: '{{ if index .Env "HOMEBREW_TAP_TOKEN" }}false{{ else }}true{{ end }}'
+    # The binary is not notarized by Apple; drop the download quarantine so
+    # Gatekeeper does not block it. The newer install_steps form renders a
+    # postflight_steps stanza that Homebrew rejects, so this keeps the
+    # (deprecated in GoReleaser) form that produces a plain postflight block.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ts"]
+          end

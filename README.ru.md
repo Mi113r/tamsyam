@@ -38,6 +38,8 @@ irm https://raw.githubusercontent.com/Mi113r/tamsyam/main/install.ps1 | iex
 macOS / Linux:
 
 ```bash
+brew install --cask mi113r/tap/tamsyam
+# или без Homebrew:
 curl -fsSL https://raw.githubusercontent.com/Mi113r/tamsyam/main/install.sh | sh
 ```
 
