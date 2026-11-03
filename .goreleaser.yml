@@ -61,7 +61,8 @@ homebrew_casks:
     repository:
       owner: Mi113r
       name: homebrew-tap
-      token: '{{ index .Env "HOMEBREW_TAP_TOKEN" }}'
+      # GoReleaser accepts only a bare .Env reference here; the release workflow always sets it.
+      token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
     commit_author:
       name: tamsyam-release
       email: 6532552+Mi113r@users.noreply.github.com
