@@ -1,6 +1,6 @@
 # tamsyam-server image. Built for linux/amd64 and linux/arm64 by cross-compiling
 # on the build platform, so no emulation is needed.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS build
 ARG TARGETOS TARGETARCH VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
